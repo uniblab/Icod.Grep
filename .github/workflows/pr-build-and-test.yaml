@@ -1,0 +1,23 @@
+name: pr-build-and-test
+
+on:
+  pull_request:
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet clean Icod.UtilLinux.sln -c Debug
+      - run: dotnet restore Icod.UtilLinux.sln
+      - run: dotnet build Icod.UtilLinux.sln -c Debug --no-restore
+      - run: dotnet test Icod.UtilLinux.sln -c Debug --no-build --logger trx
+      - name: Validate isolated UtilLinux boundary
+        shell: pwsh
+        run: ./eng/validate-g3n-UtilLinux.ps1 -Configuration Debug
