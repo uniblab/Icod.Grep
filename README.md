@@ -22,6 +22,18 @@ Neutral infrastructure comes from `Icod.CommandFramework`, including command-lin
 
 Perl-compatible regular expressions (`-P`) are recognized but are not currently available in this managed build; requesting them produces a controlled diagnostic.
 
+## INSTALLATION
+
+Install the .NET tool from NuGet.org:
+
+```text
+dotnet tool install --global Icod.Grep --version 1.0.0
+```
+
+The package installs a single command named `grep`.
+
+Runtime-specific ZIP distributions are also published for Windows, Linux, and macOS on x64 and ARM64. The ZIP archives contain `grep` (or `grep.exe` on Windows), `README.md`, and `LICENSE`, and require the .NET 10 runtime.
+
 ## OPTIONS
 
 ### Pattern selection and interpretation

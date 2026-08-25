@@ -14,6 +14,24 @@
 		<RootNamespace>Icod.Grep</RootNamespace>
 		<Configurations>Debug;Release;Staging</Configurations>
 		<Version>1.0.0</Version>
+		<AssemblyVersion>1.0.0.0</AssemblyVersion>
+	</PropertyGroup>
+	<PropertyGroup>
+		<PackageVersion>1.0.0</PackageVersion>
+		<PackAsTool>true</PackAsTool>
+		<ToolCommandName>grep</ToolCommandName>
+		<PackageId>Icod.Grep</PackageId>
+		<Authors>Timothy J. Bruce</Authors>
+		<Description>Managed GNU grep 3.12-compatible command-line tool for .NET 10.</Description>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageProjectUrl>https://github.com/uniblab/Icod.Grep</PackageProjectUrl>
+		<RepositoryType>git</RepositoryType>
+		<RepositoryUrl>https://github.com/uniblab/Icod.Grep</RepositoryUrl>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
+		<PackageReleaseNotes>Initial Icod.Grep .NET tool and runtime-specific ZIP distribution.</PackageReleaseNotes>
+		<PackageTags>grep;gnu-grep;gnu;search;text-search;regex;regular-expression;cli;command-line;tool;dotnet-tool;icod;posix;bre;ere;fixed-strings;recursive-search;cross-platform;net10;dotnet</PackageTags>
 	</PropertyGroup>
 	<PropertyGroup Condition=" '$(PlatformTarget)' == '' ">
 		<PlatformTarget>AnyCPU</PlatformTarget>
