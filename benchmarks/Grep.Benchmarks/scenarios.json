@@ -1,0 +1,72 @@
+[
+  {
+    "name": "ascii-sparse",
+    "matcher": "basic",
+    "recordCount": 16384,
+    "recordLength": 80,
+    "matchEvery": 257,
+    "patternCount": 1,
+    "pattern": "TARGET",
+    "utf8": false
+  },
+  {
+    "name": "ascii-dense",
+    "matcher": "extended",
+    "recordCount": 8192,
+    "recordLength": 96,
+    "matchEvery": 3,
+    "patternCount": 1,
+    "pattern": "TARGET|IMPOSSIBLE",
+    "utf8": false
+  },
+  {
+    "name": "utf8-sparse",
+    "matcher": "basic",
+    "recordCount": 8192,
+    "recordLength": 112,
+    "matchEvery": 127,
+    "patternCount": 1,
+    "pattern": "TARGET",
+    "utf8": true
+  },
+  {
+    "name": "long-line",
+    "matcher": "basic",
+    "recordCount": 32,
+    "recordLength": 262144,
+    "matchEvery": 5,
+    "patternCount": 1,
+    "pattern": "TARGET",
+    "utf8": false
+  },
+  {
+    "name": "fixed-100",
+    "matcher": "fixed",
+    "recordCount": 8192,
+    "recordLength": 96,
+    "matchEvery": 257,
+    "patternCount": 100,
+    "pattern": "TARGET",
+    "utf8": false
+  },
+  {
+    "name": "fixed-1000",
+    "matcher": "fixed",
+    "recordCount": 4096,
+    "recordLength": 96,
+    "matchEvery": 257,
+    "patternCount": 1000,
+    "pattern": "TARGET",
+    "utf8": false
+  },
+  {
+    "name": "pcre-lookbehind",
+    "matcher": "perl",
+    "recordCount": 8192,
+    "recordLength": 112,
+    "matchEvery": 127,
+    "patternCount": 1,
+    "pattern": "(?<=prefix-)TARGET",
+    "utf8": false
+  }
+]

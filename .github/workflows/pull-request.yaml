@@ -58,6 +58,31 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  benchmark-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: ubuntu-latest
+            name: Linux
+          - os: macos-latest
+            name: macOS
+    name: Benchmark smoke - ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore benchmark project
+        run: dotnet restore benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj
+      - name: Build benchmark project
+        run: dotnet build benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c ${{ env.CONFIGURATION }} --no-restore -p:ContinuousIntegrationBuild=true
+      - name: Run deterministic benchmark smoke
+        run: dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c ${{ env.CONFIGURATION }} --no-build --no-restore -- --smoke
+
   package-smoke:
     needs: validate
     strategy:
