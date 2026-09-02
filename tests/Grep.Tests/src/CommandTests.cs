@@ -398,6 +398,11 @@ public sealed class CommandTests {
 		}
 
 		var temporaryRoot = OperatingSystem.IsMacOS() ? "/tmp" : System.IO.Path.GetTempPath();
+		var rootInfo = new DirectoryInfo( temporaryRoot );
+		var resolvedRoot = rootInfo.ResolveLinkTarget( returnFinalTarget: true );
+		if ( resolvedRoot is not null ) {
+			temporaryRoot = resolvedRoot.FullName;
+		}
 		var directory = System.IO.Path.Combine(
 			temporaryRoot,
 			string.Concat( "ig-", Guid.NewGuid().ToString( "N" )[ ..8 ] )
@@ -406,6 +411,9 @@ public sealed class CommandTests {
 		try {
 			var regular = System.IO.Path.Combine( directory, "regular.txt" );
 			var socketPath = System.IO.Path.Combine( directory, "probe.sock" );
+			if ( OperatingSystem.IsMacOS() && socketPath.Length > 104 ) {
+				return;
+			}
 			await File.WriteAllTextAsync( regular, "hit\n" );
 			using var socket = new Socket( AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified );
 			socket.Bind( new UnixDomainSocketEndPoint( socketPath ) );
