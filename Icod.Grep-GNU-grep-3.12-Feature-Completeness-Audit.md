@@ -3,7 +3,7 @@
 **Audit baseline:** `main` at `996861022cf1d28e3a6977df6e900df98fd7ff98`  
 **Target:** GNU grep 3.12 command behavior  
 **Audit release:** `1.0.1`  
-**Current parity release:** `1.3.0` — T1 locale/encoding parity closes the documented C/POSIX and UTF-8 scope of G02/G07; T3 closed G03 and T2 closed G04–G06
+**Current parity release:** `1.4.0` — T4 closes G01 with PCRE.NET 1.6.0 / PCRE2 10.48; T1 closed G02/G07, T3 closed G03, and T2 closed G04–G06
 
 ## Executive summary
 
@@ -11,7 +11,7 @@
 
 The repository is **not yet feature-complete against GNU grep 3.12**. The remaining work is concentrated in a relatively small number of compatibility areas rather than in ordinary line matching:
 
-1. Perl-compatible regular expressions (`-P`) are recognized but unavailable.
+1. ✅ Perl-compatible regular expressions (`-P`) are implemented with PCRE2 10.48 via PCRE.NET 1.6.0 in `1.4.0`.
 2. ✅ GNU locale/environment selection for the supported C/POSIX and UTF-8 profiles is implemented in `1.3.0`.
 3. ✅ GNU color behavior is complete for the GNU grep 3.12 `GREP_COLORS` / terminal-environment contract in `1.2.0`.
 4. ✅ `POSIXLY_CORRECT` option-order behavior is implemented in `1.1.0`.
@@ -22,7 +22,7 @@ The repository is **not yet feature-complete against GNU grep 3.12**. The remain
 9. Multi-character locale collating elements remain outside the shared managed regex engine.
 10. `egrep` / `fgrep` compatibility entry points are not supplied; GNU itself treats these names as obsolescent.
 
-G01 remains the only high-priority implementation gap. G02–G07 are closed within their documented scopes. G08 and G09 remain parity/engine-edge work, while G10 is optional historical command-name compatibility.
+G01–G07 are closed within their documented scopes. G08 and G09 remain parity/engine-edge work, while G10 is optional historical command-name compatibility.
 
 ## Baseline sources
 
@@ -85,16 +85,17 @@ This is a strong functional base. The remaining work should add focused conforma
 ### G01 — Perl-compatible regular expressions (`-P`)
 
 **Priority:** High  
-**Status:** Missing by design
+**Status:** Closed in `1.4.0`
 
-GNU grep 3.12 defines `-P` / `--perl-regexp` as one of its four matcher variants. `Icod.Grep` parses `-P`, then deliberately returns a controlled diagnostic because the shared managed regex layer implements GNU BRE/ERE rather than PCRE.
+`Icod.Grep 1.4.0` uses PCRE.NET 1.6.0, which embeds PCRE2 10.48 and supplies native libraries for the repository's Windows/Linux/macOS x64/ARM64 release matrix. C/POSIX locale mode uses PCRE2's 8-bit byte semantics. UTF-8 locale mode enables UTF, UCP, malformed-UTF support, and PCRE2's ASCII-`\d` extra option so GNU grep's `\d` versus `[[:digit:]]` distinction is retained. Grep continues to own `-w`, `-x`, output selection, byte offsets, coloring, and binary/encoding-output policy around the PCRE provider.
 
 **Closure criteria:**
 
-- provide a PCRE-compatible provider with GNU grep-specific UTF-8 and character-class behavior; or
-- explicitly narrow the project compatibility claim to exclude `-P`.
-
-A silent translation to .NET regular expressions would not be sufficient for GNU compatibility.
+- use an actual PCRE2 provider rather than translating patterns to .NET regular expressions;
+- retain C/POSIX byte semantics and UTF-8/UCP behavior;
+- preserve GNU grep's ASCII-only `\d` behavior under UTF-8/UCP;
+- validate lookarounds, backreferences, Unicode properties, invalid-pattern diagnostics, and existing output modifiers;
+- validate the native PCRE2 payload across release RIDs.
 
 ### G02 — Locale and environment selection
 
@@ -231,9 +232,9 @@ G04, G05, and G06 are closed with targeted regression tests.
 
 G03 is closed. `Icod.DCurses 0.1.0` supplies the canonical terminal stack; grep uses terminal endpoint observation for `--color=auto` while retaining GNU SGR strings as the command-owned `GREP_COLORS` policy.
 
-### T4 — PCRE decision
+### T4 — PCRE support — complete in `1.4.0`
 
-Resolve G01 explicitly. Full `-P` support is the largest remaining feature decision and may justify a separate package/provider boundary.
+G01 is closed with PCRE.NET 1.6.0 / PCRE2 10.48. PCRE remains a Grep-local dependency rather than expanding `Icod.CommandFramework` with a heavyweight native dependency.
 
 ### T5 — Edge compatibility
 

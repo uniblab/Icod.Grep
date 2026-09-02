@@ -23,7 +23,7 @@ The implementation is byte-preserving where GNU behavior requires it and support
 
 Neutral infrastructure comes from `Icod.CommandFramework`, including command-line parsing, diagnostics, byte-stream helpers, record readers, read-only filesystem traversal, pathname patterns, and GNU-compatible regular-expression contracts. `Icod.Grep` has no dependency on `Icod.CoreUtils.Shared`. GNU color/terminal integration is routed through `Icod.DCurses 0.1.0`; its terminal stack provides cross-platform terminal attachment detection while grep preserves GNU `GREP_COLORS` SGR semantics.
 
-Perl-compatible regular expressions (`-P`) are recognized but are not currently available in this managed build; requesting them produces a controlled diagnostic.
+Perl-compatible regular expressions (`-P`) are implemented with PCRE.NET 1.6.0 / PCRE2 10.48. UTF-8 locales enable PCRE2 UTF/UCP semantics while retaining GNU grep's ASCII-only `\d` behavior; C/POSIX remains byte-oriented.
 
 The current GNU grep 3.12 feature-completeness assessment and remaining compatibility work are tracked in [`Icod.Grep-GNU-grep-3.12-Feature-Completeness-Audit.md`](Icod.Grep-GNU-grep-3.12-Feature-Completeness-Audit.md).
 
@@ -32,7 +32,7 @@ The current GNU grep 3.12 feature-completeness assessment and remaining compatib
 Install the .NET tool from NuGet.org:
 
 ```text
-dotnet tool install --global Icod.Grep --version 1.3.0
+dotnet tool install --global Icod.Grep --version 1.4.0
 ```
 
 The package installs a single command named `grep`.
