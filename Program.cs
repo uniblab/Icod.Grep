@@ -9,7 +9,7 @@ public static class Program {
 	/// <returns>A task whose result is the process exit status.</returns>
 	public static async Task<int> Main( string[] args ) {
 		ArgumentNullException.ThrowIfNull( args );
-		using var platformMode = PlatformIoContext.EnterProcessMode( args );
+		using var platformMode = PlatformIoContext.EnterProcessMode();
 		var standardInput = Console.OpenStandardInput();
 		var standardOutput = Console.OpenStandardOutput();
 		var standardError = Console.OpenStandardError();
