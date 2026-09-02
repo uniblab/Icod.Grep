@@ -47,20 +47,20 @@ pwsh ./packaging/VerifyDistribution.ps1 -Configuration Release
 
 The deep validation script restores, builds, and tests the solution; exercises the directly built `grep`; creates the `.nupkg`; verifies that it declares exactly one .NET tool command named `grep`; installs the package into an isolated tool path; and exercises the installed tool.
 
-`VerifyPackageArtifact.ps1` is the narrower exact-package gate used by automated package-producing jobs. It verifies the expected package identity and version, the .NET tool settings, the `grep` command/runner, and required package payload files without rebuilding the product.
+`VerifyPackageArtifact.ps1` is the narrower exact-package gate used by automated package-producing jobs. It verifies the expected package identity and version, the .NET tool settings, the `grep` command/runner, the package icon, and required package payload files without rebuilding the product.
 
 ## Build one ZIP archive
 
 For example:
 
 ```text
-pwsh ./packaging/BuildReleaseArchive.ps1 -Configuration Release -RuntimeIdentifier win-x64 -Version 1.0.0
+pwsh ./packaging/BuildReleaseArchive.ps1 -Configuration Release -RuntimeIdentifier win-x64 -Version 1.0.1
 ```
 
 The resulting archive is written under `artifacts/release/` with a name such as:
 
 ```text
-Icod.Grep-1.0.0-win-x64.zip
+Icod.Grep-1.0.1-win-x64.zip
 ```
 
 The archive builder structurally verifies the archive and executes the staged command whenever the requested RID matches the current host.

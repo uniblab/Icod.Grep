@@ -25,12 +25,14 @@ Neutral infrastructure comes from `Icod.CommandFramework`, including command-lin
 
 Perl-compatible regular expressions (`-P`) are recognized but are not currently available in this managed build; requesting them produces a controlled diagnostic.
 
+The current GNU grep 3.12 feature-completeness assessment and remaining compatibility work are tracked in [`Icod.Grep-GNU-grep-3.12-Feature-Completeness-Audit.md`](Icod.Grep-GNU-grep-3.12-Feature-Completeness-Audit.md).
+
 ## INSTALLATION
 
 Install the .NET tool from NuGet.org:
 
 ```text
-dotnet tool install --global Icod.Grep --version 1.0.0
+dotnet tool install --global Icod.Grep --version 1.0.1
 ```
 
 The package installs a single command named `grep`.
