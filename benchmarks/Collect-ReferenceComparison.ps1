@@ -17,6 +17,20 @@ if (0 -ne $LASTEXITCODE -or [string]::IsNullOrWhiteSpace($repoRoot)) {
     throw 'Unable to resolve the repository root.'
 }
 
+function Write-IcodProgressLine {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Message
+    )
+
+    Write-Host (
+        '[{0}] {1}' -f (
+            [DateTimeOffset]::Now.ToString('HH:mm:ss'),
+            $Message
+        )
+    )
+}
+
 Push-Location $repoRoot
 try {
     if (-not $AllowDirty) {
@@ -42,6 +56,14 @@ try {
         }
     }
 
+    $effectivePasses = if ($Smoke) { 1 } else { $Passes }
+    $effectiveCooldownSeconds = if ($Smoke) { 0 } else { $CooldownSeconds }
+    $totalRuns = 2 * $effectivePasses
+    Write-IcodProgressLine "Reference comparison starting. Filter='$Filter'; passes=$effectivePasses; benchmark runs=$totalRuns; cooldown=${effectiveCooldownSeconds}s."
+    if (-not $Smoke) {
+        Write-IcodProgressLine 'BenchmarkDotNet may spend several minutes inside each run without returning to the PowerShell prompt. This is expected.'
+    }
+
     $outputRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputDirectory))
     if (Test-Path -LiteralPath $outputRoot) {
         Remove-Item -LiteralPath $outputRoot -Recurse -Force
@@ -58,6 +80,7 @@ try {
     $baselineRoot = Join-Path $temporaryRoot 'baseline'
     New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 
+    Write-IcodProgressLine 'Preparing pinned Icod.Grep 1.5.0 worktree.'
     git worktree add --detach $baselineRoot $baselineCommit
     if (0 -ne $LASTEXITCODE) {
         throw 'Unable to create the pinned 1.5.0 baseline worktree.'
@@ -81,6 +104,8 @@ try {
                 [string]$Label
             )
 
+            $watch = [System.Diagnostics.Stopwatch]::StartNew()
+            Write-IcodProgressLine "Restoring/building $Label benchmark harness."
             Push-Location $Root
             try {
                 dotnet restore benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj
@@ -94,7 +119,9 @@ try {
                 }
             } finally {
                 Pop-Location
+                $watch.Stop()
             }
+            Write-IcodProgressLine ("$Label harness ready in {0:n1}s." -f $watch.Elapsed.TotalSeconds)
         }
 
         function Invoke-IcodBenchmarkVariant {
@@ -106,12 +133,19 @@ try {
                 [Parameter(Mandatory)]
                 [string]$Commit,
                 [Parameter(Mandatory)]
-                [int]$Pass
+                [int]$Pass,
+                [Parameter(Mandatory)]
+                [int]$RunNumber,
+                [Parameter(Mandatory)]
+                [int]$RunCount
             )
 
             $passLabel = "$Label-pass-$Pass"
             $variantOutput = Join-Path $outputRoot $passLabel
             New-Item -ItemType Directory -Path $variantOutput -Force | Out-Null
+            $watch = [System.Diagnostics.Stopwatch]::StartNew()
+
+            Write-IcodProgressLine "Starting benchmark run $RunNumber/$RunCount: $passLabel ($($Commit.Substring(0, 7)))."
 
             $previousSource = $env:ICOD_BENCHMARK_SOURCE
             $previousLabel = $env:ICOD_BENCHMARK_LABEL
@@ -157,22 +191,25 @@ try {
                 $env:ICOD_BENCHMARK_COMMIT = $previousCommit
                 $env:ICOD_BENCHMARK_METADATA_PATH = $previousMetadata
                 $env:ICOD_REFERENCE_INVENTORY_PATH = $previousInventory
+                $watch.Stop()
             }
+
+            Write-IcodProgressLine ("Completed benchmark run $RunNumber/$RunCount: $passLabel in {0:n1} minutes." -f $watch.Elapsed.TotalMinutes)
 
             return [PSCustomObject]@{
                 Label = $Label
                 Pass = $Pass
                 Output = $passLabel
                 Commit = $Commit
+                ElapsedSeconds = [Math]::Round($watch.Elapsed.TotalSeconds, 3)
             }
         }
 
         Initialize-IcodBenchmarkVariant -Root $baselineRoot -Label 'baseline-1.5.0'
         Initialize-IcodBenchmarkVariant -Root $repoRoot -Label 'candidate'
 
-        $effectivePasses = if ($Smoke) { 1 } else { $Passes }
-        $effectiveCooldownSeconds = if ($Smoke) { 0 } else { $CooldownSeconds }
         $sequence = New-Object System.Collections.Generic.List[object]
+        $runNumber = 0
 
         for ($pass = 1; $pass -le $effectivePasses; $pass++) {
             if (0 -eq ($pass % 2)) {
@@ -188,22 +225,26 @@ try {
             }
 
             foreach ($variant in $variants) {
+                $runNumber++
                 $sequence.Add(
                     (Invoke-IcodBenchmarkVariant `
                         -Root $variant.Root `
                         -Label $variant.Label `
                         -Commit $variant.Commit `
-                        -Pass $pass)
+                        -Pass $pass `
+                        -RunNumber $runNumber `
+                        -RunCount $totalRuns)
                 )
 
-                if (0 -lt $effectiveCooldownSeconds) {
+                if (0 -lt $effectiveCooldownSeconds -and $runNumber -lt $totalRuns) {
+                    Write-IcodProgressLine "Cooling down for $effectiveCooldownSeconds seconds before the next benchmark run."
                     Start-Sleep -Seconds $effectiveCooldownSeconds
                 }
             }
         }
 
         $comparison = [PSCustomObject]@{
-            SchemaVersion = 2
+            SchemaVersion = 3
             BaselineCommit = $baselineCommit
             CandidateCommit = $candidateCommit
             Filter = $Filter
@@ -221,8 +262,9 @@ try {
             [System.Text.UTF8Encoding]::new($false)
         )
 
-        Write-Host "Reference comparison written to $outputRoot"
+        Write-IcodProgressLine "Reference comparison complete. Results: $outputRoot"
     } finally {
+        Write-IcodProgressLine 'Removing temporary 1.5.0 worktree.'
         git worktree remove --force $baselineRoot 2>$null
         Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
