@@ -145,7 +145,7 @@ try {
             New-Item -ItemType Directory -Path $variantOutput -Force | Out-Null
             $watch = [System.Diagnostics.Stopwatch]::StartNew()
 
-            Write-IcodProgressLine "Starting benchmark run $RunNumber/$RunCount: $passLabel ($($Commit.Substring(0, 7)))."
+            Write-IcodProgressLine "Starting benchmark run $RunNumber/${RunCount}: $passLabel ($($Commit.Substring(0, 7)))."
 
             $previousSource = $env:ICOD_BENCHMARK_SOURCE
             $previousLabel = $env:ICOD_BENCHMARK_LABEL
@@ -194,7 +194,7 @@ try {
                 $watch.Stop()
             }
 
-            Write-IcodProgressLine ("Completed benchmark run $RunNumber/$RunCount: $passLabel in {0:n1} minutes." -f $watch.Elapsed.TotalMinutes)
+            Write-IcodProgressLine ("Completed benchmark run $RunNumber/${RunCount}: $passLabel in {0:n1} minutes." -f $watch.Elapsed.TotalMinutes)
 
             return [PSCustomObject]@{
                 Label = $Label
