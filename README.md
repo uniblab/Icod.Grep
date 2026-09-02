@@ -1,5 +1,8 @@
 # GREP(1)
 
+[![PR Staging build](https://github.com/uniblab/Icod.Grep/actions/workflows/pull-request.yaml/badge.svg)](https://github.com/uniblab/Icod.Grep/actions/workflows/pull-request.yaml)
+[![Main Release validation](https://github.com/uniblab/Icod.Grep/actions/workflows/main.yaml/badge.svg?branch=main)](https://github.com/uniblab/Icod.Grep/actions/workflows/main.yaml)
+
 ## NAME
 
 **grep** — print lines that match patterns
@@ -33,6 +36,22 @@ dotnet tool install --global Icod.Grep --version 1.0.0
 The package installs a single command named `grep`.
 
 Runtime-specific ZIP distributions are also published for Windows, Linux, and macOS on x64 and ARM64. The ZIP archives contain `grep` (or `grep.exe` on Windows), `README.md`, and `LICENSE`, and require the .NET 10 runtime.
+
+## DEVELOPMENT AND RELEASE
+
+The repository follows the canonical Icod build lifecycle:
+
+- local `build.cmd` / `build.sh` runs the `Debug` cycle;
+- pull requests validate `Staging` on Windows, Linux, and macOS;
+- pushes to `main` run validation-only `Release` across Windows, Linux, and macOS on x64 and ARM64;
+- `distribution-validation.yaml` is a manual deep-distribution diagnostic; and
+- only a `v<semver>` tag whose commit is contained in `main`, with a version matching the project package version, may publish a Release.
+
+The local wrappers run `clean → restore → build → test → pack → validate` through `packaging/Invoke-Build.ps1`. Pull-request packaging is produced once and the exact artifact is installed and exercised on all three host families. The six Release runners on `main` each build and smoke their matching RID ZIP archive; Linux x64 additionally produces and verifies the platform-neutral .NET tool package. Ordinary pushes to `main` never publish.
+
+Tagged Release publication keeps the .NET tool package and the six RID archives independent until the final release rendezvous. NuGet.org and GitHub Packages publish the same exact verified package in parallel. See `packaging/README.md` for the detailed distribution contract.
+
+Debug, Staging, and Release all use portable debug information in the product and test projects.
 
 ## OPTIONS
 
