@@ -95,6 +95,8 @@ jobs:
           $grep = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { Join-Path $toolPath 'grep.exe' } else { Join-Path $toolPath 'grep' }
           & $grep --version
           if (0 -ne $LASTEXITCODE) { throw 'Packed grep --version failed.' }
-          [System.IO.File]::WriteAllText('sample.txt', "alpha`nbeta`ngamma`n", [System.Text.UTF8Encoding]::new($false))
-          & $grep -n beta sample.txt
+          [System.IO.File]::WriteAllText('sample.txt', "alpha`nfoobar`ngamma`n", [System.Text.UTF8Encoding]::new($false))
+          & $grep -n foobar sample.txt
           if (0 -ne $LASTEXITCODE) { throw 'Packed grep functional smoke failed.' }
+          & $grep -P '(?<=foo)bar' sample.txt
+          if (0 -ne $LASTEXITCODE) { throw 'Packed grep PCRE smoke failed.' }
