@@ -397,7 +397,12 @@ public sealed class CommandTests {
 			return;
 		}
 
-		var directory = CreateTemporaryDirectory();
+		var temporaryRoot = OperatingSystem.IsMacOS() ? "/tmp" : System.IO.Path.GetTempPath();
+		var directory = System.IO.Path.Combine(
+			temporaryRoot,
+			string.Concat( "ig-", Guid.NewGuid().ToString( "N" )[ ..8 ] )
+		);
+		Directory.CreateDirectory( directory );
 		try {
 			var regular = System.IO.Path.Combine( directory, "regular.txt" );
 			var socketPath = System.IO.Path.Combine( directory, "probe.sock" );
