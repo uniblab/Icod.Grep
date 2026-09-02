@@ -35,6 +35,7 @@
 		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
 		<PackageReleaseNotes>Initial Icod.Grep .NET tool and runtime-specific ZIP distribution.</PackageReleaseNotes>
 		<PackageTags>grep;gnu-grep;gnu;search;text-search;regex;regular-expression;cli;command-line;tool;dotnet-tool;icod;posix;bre;ere;fixed-strings;recursive-search;cross-platform;net10;dotnet</PackageTags>
+		<PackageIcon>icon.png</PackageIcon>
 	</PropertyGroup>
 	<PropertyGroup Condition=" '$(PlatformTarget)' == '' ">
 		<PlatformTarget>AnyCPU</PlatformTarget>
@@ -71,13 +72,13 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<None Include="icon.png" Pack="true" PackagePath="" />
 		<Content Include="README.md">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<TargetPath>$(AssemblyName).README.md</TargetPath>
 			<Pack>true</Pack>
 			<PackagePath>\</PackagePath>
 		</Content>
-
 		<Content Include="LICENSE">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<TargetPath>$(AssemblyName).LICENSE.txt</TargetPath>
