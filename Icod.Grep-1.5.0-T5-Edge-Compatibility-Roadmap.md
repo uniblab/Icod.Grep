@@ -4,7 +4,7 @@
 **Target release:** `1.5.0`  
 **Scope:** G08 Windows CRLF/text-mode parity and G09 multi-character locale collating elements  
 **GNU reference:** GNU grep 3.12  
-**Status:** Implementation complete — final canonical PR validation pending
+**Status:** Implementation and canonical parser integration complete — final PR validation pending
 
 ## Objective
 
