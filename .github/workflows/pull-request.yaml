@@ -1,0 +1,100 @@
+name: pull-request
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: 10.0.x
+  CONFIGURATION: Staging
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+            package: false
+          - os: ubuntu-latest
+            name: Linux
+            package: true
+          - os: macos-latest
+            name: macOS
+            package: false
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore
+        run: dotnet restore Icod.Grep.sln
+      - name: Build
+        run: dotnet build Icod.Grep.sln -c ${{ env.CONFIGURATION }} --no-restore -p:ContinuousIntegrationBuild=true
+      - name: Test
+        run: dotnet test Icod.Grep.sln -c ${{ env.CONFIGURATION }} --no-build --no-restore --logger trx
+      - name: Pack Staging tool package
+        if: matrix.package
+        run: dotnet pack Icod.Grep.csproj -c ${{ env.CONFIGURATION }} --no-build --no-restore -o artifacts/package -p:ContinuousIntegrationBuild=true
+      - name: Verify exact Staging package artifact
+        if: matrix.package
+        shell: pwsh
+        run: ./packaging/VerifyPackageArtifact.ps1 -ArtifactDirectory artifacts/package -Configuration '${{ env.CONFIGURATION }}'
+      - name: Upload validated Staging package
+        if: matrix.package
+        uses: actions/upload-artifact@v4
+        with:
+          name: icod-grep-pr-package
+          path: artifacts/package/*.nupkg
+          if-no-files-found: error
+          retention-days: 7
+
+  package-smoke:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: ubuntu-latest
+            name: Linux
+          - os: macos-latest
+            name: macOS
+    name: Package smoke - ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: icod-grep-pr-package
+          path: artifacts/package
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Install and exercise packed grep
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem -LiteralPath 'artifacts/package' -Filter 'Icod.Grep.*.nupkg' -File)
+          if (1 -ne $packages.Count) { throw "Expected exactly one package; found $($packages.Count)." }
+          $package = $packages[0]
+          if ($package.BaseName -notmatch '^Icod\.Grep\.(?<version>.+)$') { throw "Unexpected package name '$($package.Name)'." }
+          $version = $Matches.version
+          $source = [System.IO.Path]::GetFullPath('artifacts/package')
+          $toolPath = [System.IO.Path]::GetFullPath('artifacts/tool')
+          dotnet tool install Icod.Grep --tool-path $toolPath --add-source $source --version $version --ignore-failed-sources
+          if (0 -ne $LASTEXITCODE) { throw 'Packed-tool installation failed.' }
+          $grep = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { Join-Path $toolPath 'grep.exe' } else { Join-Path $toolPath 'grep' }
+          & $grep --version
+          if (0 -ne $LASTEXITCODE) { throw 'Packed grep --version failed.' }
+          [System.IO.File]::WriteAllText('sample.txt', "alpha`nbeta`ngamma`n", [System.Text.UTF8Encoding]::new($false))
+          & $grep -n beta sample.txt
+          if (0 -ne $LASTEXITCODE) { throw 'Packed grep functional smoke failed.' }

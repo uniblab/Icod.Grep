@@ -1,0 +1,108 @@
+name: main
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: 10.0.x
+  CONFIGURATION: Release
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - id: version
+        name: Read package version
+        shell: pwsh
+        run: |
+          $version = (dotnet msbuild Icod.Grep.csproj -nologo -getProperty:PackageVersion).Trim()
+          if (0 -ne $LASTEXITCODE -or [string]::IsNullOrWhiteSpace($version)) { throw 'Unable to read PackageVersion.' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+  validate:
+    needs: metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows x64
+            rid: win-x64
+            package: false
+          - os: windows-11-arm
+            name: Windows ARM64
+            rid: win-arm64
+            package: false
+          - os: ubuntu-24.04
+            name: Linux x64
+            rid: linux-x64
+            package: true
+          - os: ubuntu-24.04-arm
+            name: Linux ARM64
+            rid: linux-arm64
+            package: false
+          - os: macos-15-intel
+            name: macOS x64
+            rid: osx-x64
+            package: false
+          - os: macos-15
+            name: macOS ARM64
+            rid: osx-arm64
+            package: false
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore
+        run: dotnet restore Icod.Grep.sln
+      - name: Build
+        run: dotnet build Icod.Grep.sln -c ${{ env.CONFIGURATION }} --no-restore -p:ContinuousIntegrationBuild=true
+      - name: Test
+        run: dotnet test Icod.Grep.sln -c ${{ env.CONFIGURATION }} --no-build --no-restore --logger trx
+      - name: Build and smoke matching Release archive
+        shell: pwsh
+        run: >-
+          ./packaging/BuildReleaseArchive.ps1
+          -Configuration '${{ env.CONFIGURATION }}'
+          -RuntimeIdentifier '${{ matrix.rid }}'
+          -Version '${{ needs.metadata.outputs.version }}'
+      - name: Pack Release tool package
+        if: matrix.package
+        run: dotnet pack Icod.Grep.csproj -c ${{ env.CONFIGURATION }} --no-build --no-restore -o artifacts/package -p:ContinuousIntegrationBuild=true
+      - name: Verify exact Release package artifact
+        if: matrix.package
+        shell: pwsh
+        run: ./packaging/VerifyPackageArtifact.ps1 -ArtifactDirectory artifacts/package -Configuration '${{ env.CONFIGURATION }}' -ExpectedVersion '${{ needs.metadata.outputs.version }}'
+      - name: Upload validated Release package
+        if: matrix.package
+        uses: actions/upload-artifact@v4
+        with:
+          name: icod-grep-main-package
+          path: artifacts/package/*.nupkg
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload matching Release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: icod-grep-main-${{ matrix.rid }}
+          path: artifacts/release/Icod.Grep-${{ needs.metadata.outputs.version }}-${{ matrix.rid }}.zip
+          if-no-files-found: error
+          retention-days: 7
