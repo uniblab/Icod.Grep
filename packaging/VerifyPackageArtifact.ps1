@@ -68,18 +68,18 @@ try {
         }
     }
 
-    $nativeNames = @(
-        'PCRE.NET.Native.x64.dll',
-        'PCRE.NET.Native.arm64.dll',
-        'PCRE.NET.Native.x64.so',
-        'PCRE.NET.Native.arm64.so',
-        'PCRE.NET.Native.x64.dylib',
-        'PCRE.NET.Native.arm64.dylib'
+    $nativeAssets = @(
+        'runtimes/win-x64/native/PCRE.NET.Native.dll',
+        'runtimes/win-arm64/native/PCRE.NET.Native.dll',
+        'runtimes/linux-x64/native/PCRE.NET.Native.so',
+        'runtimes/linux-arm64/native/PCRE.NET.Native.so',
+        'runtimes/osx-x64/native/PCRE.NET.Native.dylib',
+        'runtimes/osx-arm64/native/PCRE.NET.Native.dylib'
     )
-    foreach ($nativeName in $nativeNames) {
-        $matches = @($entries | Where-Object { $_.EndsWith("/$nativeName", [System.StringComparison]::Ordinal) })
+    foreach ($nativeAsset in $nativeAssets) {
+        $matches = @($entries | Where-Object { $_.EndsWith("/$nativeAsset", [System.StringComparison]::Ordinal) })
         if (1 -ne $matches.Count) {
-            throw "Package '$($package.Name)' must contain exactly one '$nativeName' runtime asset; found $($matches.Count)."
+            throw "Package '$($package.Name)' must contain exactly one '$nativeAsset' payload; found $($matches.Count)."
         }
     }
 
