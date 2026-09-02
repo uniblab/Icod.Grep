@@ -25,7 +25,7 @@
 		<ToolCommandName>grep</ToolCommandName>
 		<PackageId>Icod.Grep</PackageId>
 		<Authors>Timothy J. Bruce</Authors>
-		<Description>Managed GNU grep 3.12-compatible command-line tool for .NET 10.</Description>
+		<Description>Cross-platform GNU grep 3.12-compatible command-line tool for .NET 10 with PCRE2-backed -P support.</Description>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageProjectUrl>https://github.com/uniblab/Icod.Grep</PackageProjectUrl>
 		<RepositoryType>git</RepositoryType>
@@ -84,6 +84,12 @@
 		<Content Include="LICENSE">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<TargetPath>$(AssemblyName).LICENSE.txt</TargetPath>
+			<Pack>true</Pack>
+			<PackagePath>\</PackagePath>
+		</Content>
+		<Content Include="THIRD-PARTY-NOTICES.md">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<TargetPath>$(AssemblyName).THIRD-PARTY-NOTICES.md</TargetPath>
 			<Pack>true</Pack>
 			<PackagePath>\</PackagePath>
 		</Content>
