@@ -6,7 +6,7 @@ using Icod.Grep;
 
 /// <summary>Measures command-level filesystem workloads without process-startup noise.</summary>
 [MemoryDiagnoser]
-public sealed class FileCommandBenchmarks {
+public class FileCommandBenchmarks {
 	private CommandContext? context;
 	private StringWriter? error;
 	private MemoryStream? output;
