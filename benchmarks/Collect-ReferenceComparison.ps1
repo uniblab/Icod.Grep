@@ -2,7 +2,8 @@
 param(
     [string]$Filter = '*CommandBenchmarks*',
     [string]$OutputDirectory = 'artifacts/performance/reference-comparison',
-    [switch]$AllowDirty
+    [switch]$AllowDirty,
+    [switch]$Smoke
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,6 +30,14 @@ try {
         throw 'Unable to resolve candidate commit.'
     }
 
+    git cat-file -e "$baselineCommit^{commit}" 2>$null
+    if (0 -ne $LASTEXITCODE) {
+        git fetch origin $baselineCommit --depth=1
+        if (0 -ne $LASTEXITCODE) {
+            throw 'Unable to fetch the pinned 1.5.0 baseline commit.'
+        }
+    }
+
     $outputRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputDirectory))
     New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 
@@ -47,10 +56,14 @@ try {
     }
 
     try {
-        $sourceBenchmarks = Join-Path $repoRoot 'benchmarks'
-        $baselineBenchmarks = Join-Path $baselineRoot 'benchmarks'
-        New-Item -ItemType Directory -Path $baselineBenchmarks -Force | Out-Null
-        Copy-Item -LiteralPath (Join-Path $sourceBenchmarks 'Grep.Benchmarks') -Destination $baselineBenchmarks -Recurse -Force
+        $sourceProject = Join-Path $repoRoot 'benchmarks/Grep.Benchmarks'
+        $baselineProject = Join-Path $baselineRoot 'benchmarks/Grep.Benchmarks'
+        New-Item -ItemType Directory -Path $baselineProject -Force | Out-Null
+        Get-ChildItem -LiteralPath $sourceProject -Force | Where-Object {
+            $_.Name -notin @('bin', 'obj', 'BenchmarkDotNet.Artifacts')
+        } | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination $baselineProject -Recurse -Force
+        }
 
         function Invoke-IcodBenchmarkVariant {
             param(
@@ -74,7 +87,7 @@ try {
             $previousMetadata = $env:ICOD_BENCHMARK_METADATA_PATH
             $previousInventory = $env:ICOD_REFERENCE_INVENTORY_PATH
             try {
-                $env:ICOD_BENCHMARK_SOURCE = 'PhysicalReference'
+                $env:ICOD_BENCHMARK_SOURCE = if ($Smoke) { 'OrchestrationSmoke' } else { 'PhysicalReference' }
                 $env:ICOD_BENCHMARK_LABEL = $Label
                 $env:ICOD_BENCHMARK_COMMIT = $Commit
                 $env:ICOD_BENCHMARK_METADATA_PATH = Join-Path $variantOutput 'metadata.json'
@@ -92,7 +105,20 @@ try {
                         throw "$Label benchmark restore failed."
                     }
 
-                    dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release -- --filter $Filter
+                    dotnet build benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-restore
+                    if (0 -ne $LASTEXITCODE) {
+                        throw "$Label benchmark build failed."
+                    }
+
+                    if ($Smoke) {
+                        dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --metadata $env:ICOD_BENCHMARK_METADATA_PATH
+                        if (0 -ne $LASTEXITCODE) {
+                            throw "$Label benchmark metadata smoke failed."
+                        }
+                        dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --smoke
+                    } else {
+                        dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --filter $Filter
+                    }
                     if (0 -ne $LASTEXITCODE) {
                         throw "$Label benchmark run failed."
                     }
@@ -120,6 +146,7 @@ try {
             BaselineCommit = $baselineCommit
             CandidateCommit = $candidateCommit
             Filter = $Filter
+            Smoke = [bool]$Smoke
             HardwareInventorySha256 = (Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash.ToLowerInvariant()
             CollectedUtc = [DateTimeOffset]::UtcNow.ToString('O')
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $outputRoot 'comparison.json') -Encoding utf8NoBOM
