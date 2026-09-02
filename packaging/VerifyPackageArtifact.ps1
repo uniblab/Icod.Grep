@@ -52,17 +52,34 @@ $archive = [System.IO.Compression.ZipFile]::OpenRead($package.FullName)
 try {
     $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\\','/') })
     $settingsPath = "tools/$targetFramework/any/DotnetToolSettings.xml"
-    foreach ($required in @(
+    $requiredEntries = @(
         $settingsPath,
         "tools/$targetFramework/any/grep.dll",
         "tools/$targetFramework/any/grep.runtimeconfig.json",
         "tools/$targetFramework/any/Icod.DCurses.dll",
+        "tools/$targetFramework/any/PCRE.NET.dll",
         'README.md',
         'LICENSE',
         'icon.png'
-    )) {
+    )
+    foreach ($required in $requiredEntries) {
         if ($required -notin $entries) {
             throw "Package '$($package.Name)' is missing '$required'."
+        }
+    }
+
+    $nativeNames = @(
+        'PCRE.NET.Native.x64.dll',
+        'PCRE.NET.Native.arm64.dll',
+        'PCRE.NET.Native.x64.so',
+        'PCRE.NET.Native.arm64.so',
+        'PCRE.NET.Native.x64.dylib',
+        'PCRE.NET.Native.arm64.dylib'
+    )
+    foreach ($nativeName in $nativeNames) {
+        $matches = @($entries | Where-Object { $_.EndsWith("/$nativeName", [System.StringComparison]::Ordinal) })
+        if (1 -ne $matches.Count) {
+            throw "Package '$($package.Name)' must contain exactly one '$nativeName' runtime asset; found $($matches.Count)."
         }
     }
 
