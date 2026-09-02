@@ -32,7 +32,7 @@ The current GNU grep 3.12 feature-completeness assessment and remaining compatib
 Install the .NET tool from NuGet.org:
 
 ```text
-dotnet tool install --global Icod.Grep --version 1.2.0
+dotnet tool install --global Icod.Grep --version 1.3.0
 ```
 
 The package installs a single command named `grep`.
