@@ -25,14 +25,14 @@ Neutral infrastructure comes from `Icod.CommandFramework`, including command-lin
 
 Perl-compatible regular expressions (`-P`) are implemented with PCRE.NET 1.6.0 / PCRE2 10.48. UTF-8 locales enable PCRE2 UTF/UCP semantics while retaining GNU grep's ASCII-only `\d` behavior; C/POSIX remains byte-oriented.
 
-The current GNU grep 3.12 feature-completeness assessment and remaining compatibility work are tracked in [`Icod.Grep-GNU-grep-3.12-Feature-Completeness-Audit.md`](Icod.Grep-GNU-grep-3.12-Feature-Completeness-Audit.md).
+The current GNU grep 3.12 feature-completeness assessment and compatibility boundaries are tracked in [`Icod.Grep-GNU-grep-3.12-Feature-Completeness-Audit.md`](Icod.Grep-GNU-grep-3.12-Feature-Completeness-Audit.md).
 
 ## INSTALLATION
 
 Install the .NET tool from NuGet.org:
 
 ```text
-dotnet tool install --global Icod.Grep --version 1.4.0
+dotnet tool install --global Icod.Grep --version 1.5.0
 ```
 
 The package installs a single command named `grep`.
@@ -49,7 +49,7 @@ The repository follows the canonical Icod build lifecycle:
 - `distribution-validation.yaml` is a manual deep-distribution diagnostic; and
 - only a `v<semver>` tag whose commit is contained in `main`, with a version matching the project package version, may publish a Release.
 
-The local wrappers run `clean → restore → build → test → pack → validate` through `packaging/Invoke-Build.ps1`. Pull-request packaging is produced once and the exact artifact is installed and exercised on all three host families, including a real PCRE lookbehind smoke. Because PCRE.NET carries architecture-specific native code, PR validation also builds and smokes the matching standalone archive on Windows x64, Windows ARM64, Linux x64, Linux ARM64, macOS x64, and macOS ARM64. The six Release runners on `main` each build and smoke their matching RID ZIP archive; Linux x64 additionally produces and verifies the platform-neutral .NET tool package. Ordinary pushes to `main` never publish.
+The local wrappers run `clean → restore → build → test → pack → validate` through `packaging/Invoke-Build.ps1`. Pull-request packaging is produced once and the exact artifact is installed and exercised on all three host families, including a real PCRE lookbehind smoke. Because PCRE.NET carries architecture-specific native code, PR validation also builds and smokes the matching standalone archive on Windows x64, Windows ARM64, Linux x64, Linux ARM64, macOS x64, and macOS ARM64. Windows package smoke additionally exercises the GNU default-text versus `-U` CRLF distinction. The six Release runners on `main` each build and smoke their matching RID ZIP archive; Linux x64 additionally produces and verifies the platform-neutral .NET tool package. Ordinary pushes to `main` never publish.
 
 Tagged Release publication keeps the .NET tool package and the six RID archives independent until the final release rendezvous. NuGet.org and GitHub Packages publish the same exact verified package in parallel. See `packaging/README.md` for the detailed distribution contract.
 
@@ -208,7 +208,8 @@ Debug, Staging, and Release all use portable debug information in the product an
     Align record content after prefixes.
 
 -U, --binary
-    Retain binary platform input mode.
+    On Windows, use binary input/output without CRLF or Control-Z text-mode
+    translation. This option has no effect on Linux or macOS.
 
 --help
     Display command help.
@@ -227,6 +228,8 @@ GNU Basic Regular Expressions and GNU Extended Regular Expressions are implement
 
 Perl-compatible regular expressions are implemented through PCRE.NET 1.6.0 / PCRE2 10.48. In C/POSIX locale mode PCRE operates on the preserved 8-bit record bytes. In supported UTF-8 locales grep enables PCRE2 UTF and UCP behavior plus malformed-UTF matching support, while retaining GNU grep's ASCII-only `\d` semantics; PCRE2 pattern-level overrides such as `(?-aD)` remain available.
 
+The shared BRE/ERE engine supports single-scalar collating symbols and equivalence classes. Multi-scalar locale collating elements are not generically discoverable through .NET's collation APIs, so unresolved forms such as `[[.ch.]]` produce a controlled regular-expression diagnostic rather than being assigned guessed locale semantics.
+
 ## FILES
 
 With no FILE operand, `grep` reads standard input. A FILE operand of `-` also denotes standard input.
@@ -236,6 +239,8 @@ Recursive modes use the read-only traversal engine from `Icod.CommandFramework`.
 ## BINARY INPUT
 
 Unless text mode is requested, input containing NUL bytes is treated as binary. The default binary policy reports that a binary file matches rather than emitting matching record contents. `-a` treats binary data as text, while `-I` and `--binary-files=without-match` treat binary files as having no match.
+
+On Windows, platform text/binary I/O is a separate concern from grep's binary-file content policy. In normal platform text mode, CRLF input is translated to LF before matching, Control-Z terminates text input, output LF bytes become CRLF, and byte offsets reflect the translated stream. `-U` / `--binary` bypasses that platform translation and preserves the underlying bytes. Linux and macOS always use the byte-preserving platform path, so `-U` is a no-op there.
 
 ## EXIT STATUS
 
@@ -250,6 +255,10 @@ Cancellation uses the shared command-framework cancellation status.
 ## PLATFORM NOTES
 
 The implementation targets .NET 10 and is intended to run on Windows, Linux, and macOS. Filesystem traversal and symbolic-link behavior are delegated to cross-platform `Icod.CommandFramework` contracts rather than hidden behind command-local approximations.
+
+Windows follows GNU grep's text/binary platform distinction: default process I/O translates CRLF/Control-Z as Windows text I/O, while `-U` preserves raw bytes. This behavior is implemented at the stream boundary so BRE, ERE, fixed strings, PCRE, record selection, and binary-content policy share one translated byte view.
+
+The documented locale scope is C/POSIX byte semantics plus supported UTF-8 profiles. `Icod.CommandFramework.RegularExpressions` does not claim a runtime-discoverable inventory of locale-specific multi-scalar collating elements. Such unresolved elements fail with a stable diagnostic instead of silently receiving incorrect collation semantics. Locale-specific providers may extend that capability in the future without changing grep's current compatibility contract.
 
 ## AUTHORS
 
