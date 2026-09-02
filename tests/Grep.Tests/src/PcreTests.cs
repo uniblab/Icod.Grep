@@ -27,6 +27,9 @@ public sealed class PcreTests {
 
 		var posixDigit = await RunAsync( [ "-P", "^[[:digit:]]$" ], arabicIndicDigit );
 		Assert.Equal( arabicIndicDigit, posixDigit.Output );
+
+		var unicodeSlashD = await RunAsync( [ "-P", @"(?-aD)^\d$" ], arabicIndicDigit );
+		Assert.Equal( arabicIndicDigit, unicodeSlashD.Output );
 	}
 
 	[Fact]
@@ -48,11 +51,72 @@ public sealed class PcreTests {
 	}
 
 	[Fact]
-	public async Task CooperatesWithOnlyMatchingAndIgnoreCase() {
+	public async Task SupportsWordAndLineRegexpSelection() {
 		using var environment = new LocaleEnvironmentScope( "C.UTF-8" );
-		var result = await RunAsync( [ "-Pio", "(?<=foo)bar" ], "xxFOObArzz\n"u8.ToArray() );
+		var source = "foobar\nfoo bar\nbar\n"u8.ToArray();
+
+		var word = await RunAsync( [ "-Pw", "bar" ], source );
+		Assert.Equal( CommandExitCodes.Success, word.Status );
+		Assert.Equal( "foo bar\nbar\n"u8.ToArray(), word.Output );
+
+		var line = await RunAsync( [ "-Px", "foo.*" ], source );
+		Assert.Equal( CommandExitCodes.Success, line.Status );
+		Assert.Equal( "foobar\nfoo bar\n"u8.ToArray(), line.Output );
+	}
+
+	[Fact]
+	public async Task SupportsNullDataDotAllAcrossEmbeddedNewlines() {
+		using var environment = new LocaleEnvironmentScope( "C.UTF-8" );
+		var source = "a\nb\n\0c\n\0"u8.ToArray();
+		var result = await RunAsync( [ "-zP", "(?s)a.b" ], source );
 		Assert.Equal( CommandExitCodes.Success, result.Status );
-		Assert.Equal( "bAr\n"u8.ToArray(), result.Output );
+		Assert.Equal( "a\nb\n\0"u8.ToArray(), result.Output );
+	}
+
+	[Fact]
+	public async Task PreservesEmbeddedNulPatternsFromPatternFiles() {
+		using var environment = new LocaleEnvironmentScope( "C" );
+		var path = System.IO.Path.GetTempFileName();
+		try {
+			await File.WriteAllBytesAsync(
+				path,
+				new byte[] { (byte)'a', 0, (byte)'b', (byte)'\n' }
+			);
+			var source = new byte[] { (byte)'a', 0, (byte)'b', (byte)'\n' };
+			var result = await RunAsync( [ "-aP", "-f", path ], source );
+			Assert.Equal( CommandExitCodes.Success, result.Status );
+			Assert.Equal( source, result.Output );
+		} finally {
+			File.Delete( path );
+		}
+	}
+
+	[Fact]
+	public async Task SuppressesMalformedUtf8OutputUnlessTextIsForced() {
+		using var environment = new LocaleEnvironmentScope( "C.UTF-8" );
+		var source = new byte[] { (byte)'x', 0xFF, (byte)'y', (byte)'\n' };
+
+		var normal = await RunAsync( [ "-P", "x" ], source );
+		Assert.Equal( CommandExitCodes.Success, normal.Status );
+		Assert.Empty( normal.Output );
+
+		var text = await RunAsync( [ "-aP", "x" ], source );
+		Assert.Equal( CommandExitCodes.Success, text.Status );
+		Assert.Equal( source, text.Output );
+	}
+
+	[Fact]
+	public async Task CooperatesWithOnlyMatchingIgnoreCaseAndColor() {
+		using var environment = new LocaleEnvironmentScope( "C.UTF-8" );
+		var result = await RunAsync(
+			[ "-Pio", "--color=always", "(?<=foo)bar" ],
+			"xxFOObArzz\n"u8.ToArray()
+		);
+		Assert.Equal( CommandExitCodes.Success, result.Status );
+		Assert.Equal(
+			"\u001b[01;31m\u001b[KbAr\u001b[m\u001b[K\n"u8.ToArray(),
+			result.Output
+		);
 	}
 
 	[Fact]
@@ -63,7 +127,10 @@ public sealed class PcreTests {
 		Assert.NotEmpty( result.Error );
 	}
 
-	private static async Task<(int Status, byte[] Output, string Error)> RunAsync( string[] args, byte[] input ) {
+	private static async Task<(int Status, byte[] Output, string Error)> RunAsync(
+		string[] args,
+		byte[] input
+	) {
 		using var inputStream = new MemoryStream( input, writable: false );
 		using var outputStream = new MemoryStream();
 		var error = new StringWriter();
