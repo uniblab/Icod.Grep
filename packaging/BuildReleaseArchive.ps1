@@ -73,16 +73,35 @@ function Get-CurrentRuntimeIdentifier {
     return ''
 }
 
-function Invoke-Executable {
+function Invoke-ExecutableSmoke {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Path
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$WorkingDirectory
     )
 
     Write-Host "> $Path --version"
     & $Path --version
     if (0 -ne $LASTEXITCODE) {
-        throw "Executable '$Path' exited with status $LASTEXITCODE."
+        throw "Executable '$Path' --version exited with status $LASTEXITCODE."
+    }
+
+    $samplePath = Join-Path $WorkingDirectory 'pcre-smoke.txt'
+    [System.IO.File]::WriteAllText(
+        $samplePath,
+        "alpha`nfoobar`ngamma`n",
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    try {
+        Write-Host "> $Path -P '(?<=foo)bar' $samplePath"
+        & $Path -P '(?<=foo)bar' $samplePath
+        if (0 -ne $LASTEXITCODE) {
+            throw "Executable '$Path' PCRE smoke exited with status $LASTEXITCODE."
+        }
+    } finally {
+        Remove-Item -LiteralPath $samplePath -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -152,6 +171,7 @@ try {
         '--self-contained', $selfContainedValue,
         "-p:PublishSelfContained=$selfContainedValue",
         '-p:PublishSingleFile=true',
+        '-p:IncludeNativeLibrariesForSelfExtract=true',
         '-p:PublishTrimmed=false',
         '-p:DebugType=None',
         '-p:DebugSymbols=false',
@@ -168,6 +188,7 @@ try {
     Copy-Item -LiteralPath $publishedExecutable -Destination (Join-Path $stageDirectory $executableFileName)
     Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination (Join-Path $stageDirectory 'LICENSE')
     Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination (Join-Path $stageDirectory 'README.md')
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'THIRD-PARTY-NOTICES.md') -Destination (Join-Path $stageDirectory 'THIRD-PARTY-NOTICES.md')
 
     $currentRid = Get-CurrentRuntimeIdentifier
     if ($RuntimeIdentifier -eq $currentRid) {
@@ -178,7 +199,7 @@ try {
                 throw "chmod failed for '$stagedExecutable'."
             }
         }
-        Invoke-Executable -Path $stagedExecutable
+        Invoke-ExecutableSmoke -Path $stagedExecutable -WorkingDirectory $stageDirectory
     } else {
         Write-Host "Skipping executable smoke test because host RID '$currentRid' does not match '$RuntimeIdentifier'."
     }
@@ -209,7 +230,7 @@ try {
     Assert-ArchiveContents `
         -ArchivePath $archivePath `
         -RootDirectoryName $stageDirectoryName `
-        -ExpectedFileNames @($executableFileName, 'LICENSE', 'README.md')
+        -ExpectedFileNames @($executableFileName, 'LICENSE', 'README.md', 'THIRD-PARTY-NOTICES.md')
 
     Write-Host ''
     Write-Host "Created release archive: $archivePath"

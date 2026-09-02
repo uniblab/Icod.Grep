@@ -515,16 +515,16 @@ public sealed class CommandTests {
 		Assert.Equal( CommandExitCodes.Success, repeated.Status );
 	}
 
-	/// <summary>Verifies malformed managed regex syntax and unavailable Perl mode receive controlled status-two diagnostics.</summary>
+	/// <summary>Verifies malformed BRE and PCRE syntax receive controlled status-two diagnostics.</summary>
 	/// <returns>A task representing the test.</returns>
 	[Fact]
-	public async Task DiagnosesInvalidOrUnavailablePatternModes() {
-		var invalid = await RunAsync( [ "[" ], [] );
-		var perl = await RunAsync( [ "-P", "x" ], [] );
-		Assert.Equal( CommandExitCodes.UsageError, invalid.Status );
-		Assert.NotEmpty( invalid.Error );
-		Assert.Equal( CommandExitCodes.UsageError, perl.Status );
-		Assert.Contains( "Perl-compatible", perl.Error );
+	public async Task DiagnosesInvalidPatternSyntax() {
+		var invalidBre = await RunAsync( [ "[" ], [] );
+		var invalidPcre = await RunAsync( [ "-P", "(" ], [] );
+		Assert.Equal( CommandExitCodes.UsageError, invalidBre.Status );
+		Assert.NotEmpty( invalidBre.Error );
+		Assert.Equal( CommandExitCodes.UsageError, invalidPcre.Status );
+		Assert.NotEmpty( invalidPcre.Error );
 	}
 
 	/// <summary>Verifies forced color highlights only the matched byte ranges.</summary>
@@ -544,7 +544,7 @@ public sealed class CommandTests {
 		Assert.Equal( CommandExitCodes.Success, help.Status );
 		Assert.Contains( "Usage: grep", help.TextOutput );
 		Assert.Equal( CommandExitCodes.Success, version.Status );
-		Assert.Contains( "grep (Icod.Grep) 1.3.0", version.TextOutput );
+		Assert.Contains( "grep (Icod.Grep) 1.4.0", version.TextOutput );
 	}
 
 	/// <summary>Verifies cancellation returns the shared canceled status.</summary>

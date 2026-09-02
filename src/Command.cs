@@ -13,10 +13,11 @@ using Icod.CommandFramework.Records;
 using Icod.CommandFramework.RegularExpressions;
 using Icod.CommandFramework.Text;
 using Icod.Terminal;
+using PCRE;
 
 /// <summary>Implements GNU-compatible pattern searching over byte-preserving input records.</summary>
 public static class Command {
-	private const string VersionText = "grep (Icod.Grep) 1.3.0";
+	private const string VersionText = "grep (Icod.Grep) 1.4.0";
 	private const int BinaryProbeLength = 98_304;
 	private static readonly byte[] ColorReset = "\u001b[m"u8.ToArray();
 	private static readonly byte[] EraseLine = "\u001b[K"u8.ToArray();
@@ -203,6 +204,49 @@ public static class Command {
 			return result.Match is null
 				? null
 				: new MatchSpan( result.Match.ByteIndex, result.Match.ByteLength );
+		}
+	}
+
+	private sealed class PcrePattern : IGrepPattern {
+		private readonly PcreRegex8Bit expression;
+
+		public PcrePattern(
+			string pattern,
+			bool ignoreCase,
+			GrepLocaleProfile locale
+		) {
+			var options = PcreOptions.None;
+			var extraOptions = PcreExtraCompileOptions.None;
+			if ( ignoreCase ) {
+				options |= PcreOptions.Caseless;
+			}
+			if ( TextDecodingMode.Utf8 == locale.DecodingMode ) {
+				options |= PcreOptions.Utf | PcreOptions.Ucp | PcreOptions.MatchInvalidUtf;
+				extraOptions |= PcreExtraCompileOptions.AsciiBsD;
+			}
+			var settings = new PcreRegexSettings {
+				Options = options,
+				ExtraCompileOptions = extraOptions
+			};
+			this.expression = new PcreRegex8Bit(
+				locale.PatternEncoding.GetBytes( pattern ),
+				locale.PatternEncoding,
+				settings
+			);
+		}
+
+		public MatchSpan? Find(
+			ReadOnlyMemory<byte> input,
+			int startOffset,
+			CancellationToken cancellationToken
+		) {
+			cancellationToken.ThrowIfCancellationRequested();
+			if ( startOffset < 0 || startOffset > input.Length ) {
+				return null;
+			}
+			var match = this.expression.Match( input.Span, startOffset );
+			cancellationToken.ThrowIfCancellationRequested();
+			return match.Success ? new MatchSpan( match.Index, match.Length ) : null;
 		}
 	}
 
@@ -544,14 +588,6 @@ public static class Command {
 				return CommandExitCodes.UsageError;
 			}
 			var options = optionsResult.Options;
-			if ( options.PatternMode == PatternMode.Perl ) {
-				await ReportErrorAsync(
-					options,
-					context,
-					"Perl-compatible regular expressions are not available in this managed build"
-				).ConfigureAwait( false );
-				return CommandExitCodes.UsageError;
-			}
 			var patternSet = await CompilePatternsAsync( options, standardInput, context ).ConfigureAwait( false );
 			if ( patternSet is null ) {
 				return CommandExitCodes.UsageError;
@@ -982,6 +1018,23 @@ public static class Command {
 					characterClassProvider,
 					options.Locale.DecodingMode
 				) );
+			}
+			return new PatternSet(
+				patterns,
+				options.WordRegexp,
+				options.LineRegexp,
+				characterClassProvider,
+				options.Locale.DecodingMode
+			);
+		}
+		if ( options.PatternMode == PatternMode.Perl ) {
+			try {
+				foreach ( var patternText in patternTexts ) {
+					patterns.Add( new PcrePattern( patternText, options.IgnoreCase, options.Locale ) );
+				}
+			} catch ( PcreException exception ) {
+				await ReportErrorAsync( options, context, exception.Message ).ConfigureAwait( false );
+				return null;
 			}
 			return new PatternSet(
 				patterns,
@@ -2028,7 +2081,7 @@ Pattern selection and interpretation:
   -E, --extended-regexp       PATTERNS are extended regular expressions
   -F, --fixed-strings         PATTERNS are strings
   -G, --basic-regexp          PATTERNS are basic regular expressions
-  -P, --perl-regexp           diagnose that managed PCRE support is unavailable
+  -P, --perl-regexp           PATTERNS are Perl-compatible regular expressions
   -e, --regexp=PATTERNS       use PATTERNS for matching
   -f, --file=FILE             take PATTERNS from FILE
   -i, -y, --ignore-case       ignore case distinctions

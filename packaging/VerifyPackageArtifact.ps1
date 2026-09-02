@@ -52,17 +52,35 @@ $archive = [System.IO.Compression.ZipFile]::OpenRead($package.FullName)
 try {
     $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\\','/') })
     $settingsPath = "tools/$targetFramework/any/DotnetToolSettings.xml"
-    foreach ($required in @(
+    $requiredEntries = @(
         $settingsPath,
         "tools/$targetFramework/any/grep.dll",
         "tools/$targetFramework/any/grep.runtimeconfig.json",
         "tools/$targetFramework/any/Icod.DCurses.dll",
+        "tools/$targetFramework/any/PCRE.NET.dll",
         'README.md',
         'LICENSE',
+        'THIRD-PARTY-NOTICES.md',
         'icon.png'
-    )) {
+    )
+    foreach ($required in $requiredEntries) {
         if ($required -notin $entries) {
             throw "Package '$($package.Name)' is missing '$required'."
+        }
+    }
+
+    $nativeAssets = @(
+        'runtimes/win-x64/native/PCRE.NET.Native.dll',
+        'runtimes/win-arm64/native/PCRE.NET.Native.dll',
+        'runtimes/linux-x64/native/PCRE.NET.Native.so',
+        'runtimes/linux-arm64/native/PCRE.NET.Native.so',
+        'runtimes/osx-x64/native/PCRE.NET.Native.dylib',
+        'runtimes/osx-arm64/native/PCRE.NET.Native.dylib'
+    )
+    foreach ($nativeAsset in $nativeAssets) {
+        $matches = @($entries | Where-Object { $_.EndsWith("/$nativeAsset", [System.StringComparison]::Ordinal) })
+        if (1 -ne $matches.Count) {
+            throw "Package '$($package.Name)' must contain exactly one '$nativeAsset' payload; found $($matches.Count)."
         }
     }
 

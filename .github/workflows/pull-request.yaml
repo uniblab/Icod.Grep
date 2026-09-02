@@ -95,6 +95,51 @@ jobs:
           $grep = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { Join-Path $toolPath 'grep.exe' } else { Join-Path $toolPath 'grep' }
           & $grep --version
           if (0 -ne $LASTEXITCODE) { throw 'Packed grep --version failed.' }
-          [System.IO.File]::WriteAllText('sample.txt', "alpha`nbeta`ngamma`n", [System.Text.UTF8Encoding]::new($false))
-          & $grep -n beta sample.txt
+          [System.IO.File]::WriteAllText('sample.txt', "alpha`nfoobar`ngamma`n", [System.Text.UTF8Encoding]::new($false))
+          & $grep -n foobar sample.txt
           if (0 -ne $LASTEXITCODE) { throw 'Packed grep functional smoke failed.' }
+          & $grep -P '(?<=foo)bar' sample.txt
+          if (0 -ne $LASTEXITCODE) { throw 'Packed grep PCRE smoke failed.' }
+
+  archive-smoke:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows x64
+            rid: win-x64
+          - os: windows-11-arm
+            name: Windows ARM64
+            rid: win-arm64
+          - os: ubuntu-24.04
+            name: Linux x64
+            rid: linux-x64
+          - os: ubuntu-24.04-arm
+            name: Linux ARM64
+            rid: linux-arm64
+          - os: macos-15-intel
+            name: macOS x64
+            rid: osx-x64
+          - os: macos-15
+            name: macOS ARM64
+            rid: osx-arm64
+    name: Archive smoke - ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Read package version and build matching archive
+        shell: pwsh
+        run: |
+          $version = (dotnet msbuild Icod.Grep.csproj -nologo -getProperty:PackageVersion).Trim()
+          if (0 -ne $LASTEXITCODE -or [string]::IsNullOrWhiteSpace($version)) {
+              throw 'Unable to read PackageVersion.'
+          }
+          ./packaging/BuildReleaseArchive.ps1 `
+              -Configuration '${{ env.CONFIGURATION }}' `
+              -RuntimeIdentifier '${{ matrix.rid }}' `
+              -Version $version

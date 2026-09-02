@@ -13,19 +13,19 @@
 		<AssemblyName>grep</AssemblyName>
 		<RootNamespace>Icod.Grep</RootNamespace>
 		<Configurations>Debug;Release;Staging</Configurations>
-		<Version>1.3.0</Version>
-		<AssemblyVersion>1.3.0.0</AssemblyVersion>
+		<Version>1.4.0</Version>
+		<AssemblyVersion>1.4.0.0</AssemblyVersion>
 		<DebugType>portable</DebugType>
 		<DebugSymbols>true</DebugSymbols>
 		<SignAssembly>false</SignAssembly>
 	</PropertyGroup>
 	<PropertyGroup>
-		<PackageVersion>1.3.0</PackageVersion>
+		<PackageVersion>1.4.0</PackageVersion>
 		<PackAsTool>true</PackAsTool>
 		<ToolCommandName>grep</ToolCommandName>
 		<PackageId>Icod.Grep</PackageId>
 		<Authors>Timothy J. Bruce</Authors>
-		<Description>Managed GNU grep 3.12-compatible command-line tool for .NET 10.</Description>
+		<Description>Cross-platform GNU grep 3.12-compatible command-line tool for .NET 10 with PCRE2-backed -P support.</Description>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageProjectUrl>https://github.com/uniblab/Icod.Grep</PackageProjectUrl>
 		<RepositoryType>git</RepositoryType>
@@ -33,8 +33,8 @@
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
 		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
-		<PackageReleaseNotes>Adds GNU grep 3.12 locale and encoding parity for C/POSIX and UTF-8 profiles: LC_ALL/LC_CTYPE/LC_COLLATE/LANG category resolution, byte-preserving C-locale pattern files, locale-aware BRE/ERE/fixed matching, and record-level malformed UTF-8 output suppression with -a/-I behavior.</PackageReleaseNotes>
-		<PackageTags>grep;gnu-grep;gnu;search;text-search;regex;regular-expression;cli;command-line;tool;dotnet-tool;icod;posix;bre;ere;fixed-strings;recursive-search;cross-platform;net10;dotnet</PackageTags>
+		<PackageReleaseNotes>Adds GNU grep 3.12 -P/--perl-regexp support through PCRE.NET 1.6.0 / PCRE2 10.48, including byte-preserving C/POSIX mode, UTF-8/UCP behavior, GNU-compatible ASCII \d semantics, and native runtime validation across supported release RIDs.</PackageReleaseNotes>
+		<PackageTags>grep;gnu-grep;gnu;search;text-search;regex;regular-expression;cli;command-line;tool;dotnet-tool;icod;posix;bre;ere;pcre;pcre2;perl-regexp;fixed-strings;recursive-search;cross-platform;net10;dotnet</PackageTags>
 		<PackageIcon>icon.png</PackageIcon>
 	</PropertyGroup>
 	<PropertyGroup Condition=" '$(PlatformTarget)' == '' ">
@@ -49,6 +49,7 @@
 	<ItemGroup>
 		<PackageReference Include="Icod.CommandFramework" Version="2.1.0" />
 		<PackageReference Include="Icod.DCurses" Version="0.1.0" />
+		<PackageReference Include="PCRE.NET" Version="1.6.0" />
 	</ItemGroup>
 	<PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
 		<ErrorReport>prompt</ErrorReport>
@@ -83,6 +84,12 @@
 		<Content Include="LICENSE">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<TargetPath>$(AssemblyName).LICENSE.txt</TargetPath>
+			<Pack>true</Pack>
+			<PackagePath>\</PackagePath>
+		</Content>
+		<Content Include="THIRD-PARTY-NOTICES.md">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<TargetPath>$(AssemblyName).THIRD-PARTY-NOTICES.md</TargetPath>
 			<Pack>true</Pack>
 			<PackagePath>\</PackagePath>
 		</Content>
