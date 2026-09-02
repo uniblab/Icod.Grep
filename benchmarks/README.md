@@ -6,7 +6,9 @@ This directory contains the measurement infrastructure for the `1.6.0` T6 perfor
 
 The benchmark foundation is implemented and its deterministic smoke has passed on GitHub-hosted Windows, Linux, and macOS. The development version surfaces are synchronized to `1.6.0` while the comparison script pins the immutable `1.5.0` merge commit as the baseline.
 
-The remaining T6.0 exit gate is measurement rather than code: run `Collect-ReferenceComparison.ps1` on the physical Windows reference laptop and retain the resulting baseline/candidate report. Production hot-path optimization must not begin until those measurements identify the bottlenecks worth attacking.
+The first physical-reference pilot was collected on September 2, 2026. It successfully established that allocation measurements are highly repeatable, but it also exposed substantial run-order/timing variance despite there being no production search-code difference between the pinned `1.5.0` baseline and the pilot `1.6.0` candidate beyond version metadata. The reference protocol was therefore strengthened before accepting timing results as optimization evidence.
+
+T6.0 remains measurement-first: production hot-path optimization must not begin until the stabilized comparison identifies the bottlenecks worth attacking.
 
 ## Measurement policy
 
@@ -26,7 +28,7 @@ The source-controlled `scenarios.json` catalog describes deterministic command w
 - fixed-string pattern-count scaling at 100 and 1,000 patterns; and
 - PCRE lookbehind.
 
-`CommandBenchmarks` exercises the complete in-process command parse/compile/search/count path without process-startup noise. `RecordReaderBenchmarks` separately measures the shared materializing record reader for short through long records.
+`CommandBenchmarks` exercises the complete in-process command parse/compile/search/count path without process-startup noise. `FileCommandBenchmarks` exercises large-file, many-small-file, and recursive-tree workloads. `RecordReaderBenchmarks` separately measures the shared materializing record reader for short through long records.
 
 ## Fast smoke
 
@@ -57,16 +59,26 @@ On the physical Windows reference laptop, use:
 ./benchmarks/Collect-ReferenceComparison.ps1
 ```
 
-The script:
+The default authoritative protocol now:
 
 1. requires a clean candidate worktree by default;
 2. creates a detached worktree at the pinned `1.5.0` merge commit;
 3. copies the **current benchmark harness** into that baseline worktree so baseline and candidate use identical benchmark code;
-4. runs BenchmarkDotNet for baseline and candidate;
-5. writes separate metadata files and raw BenchmarkDotNet artifacts beneath `artifacts/performance/reference-comparison/`;
-6. records the SHA-256 digest of `hardware_inventory.txt`, not its contents; and
-7. removes the temporary baseline worktree.
+4. restores/builds each variant once;
+5. runs two alternating passes in ABBA order: baseline → candidate → candidate → baseline;
+6. waits 30 seconds between benchmark variants by default to reduce immediate thermal/run-order coupling;
+7. runs all benchmark classes by default, including the record-reader microbenchmarks;
+8. writes each pass to a separate result directory beneath `artifacts/performance/reference-comparison/`;
+9. writes separate metadata files plus an ordered comparison manifest;
+10. records the SHA-256 digest of `hardware_inventory.txt`, not its contents; and
+11. removes the temporary baseline worktree.
 
-Use `-Filter` to narrow the benchmark group. Do not compare results gathered under materially different power, thermal, runtime, or workload conditions as though they were one series.
+Use `-Filter` to narrow the benchmark group, `-Passes` to increase the number of alternating passes, and `-CooldownSeconds` to change the interval between variants. Do not compare results gathered under materially different power, thermal, runtime, or workload conditions as though they were one series.
 
-T6 optimization work does not begin until this harness has captured a credible `1.5.0` reference series and identified the measured bottlenecks worth addressing.
+### Pilot finding
+
+The initial one-pass reference run is retained as a measurement-methodology finding, not as a performance regression result. Baseline and candidate production search behavior were effectively identical, yet wall-clock deltas ranged from about **+66% to -29%** depending on the scenario. Allocation values, by contrast, were essentially identical between variants.
+
+The stable allocation data also exposed a likely optimization priority: managed BRE/ERE command workloads allocate hundreds of megabytes on roughly megabyte-scale inputs, while analogous fixed-string workloads allocate only a few megabytes. Long-line and large-file BRE cases likewise show multi-gigabyte allocations. This suggests the managed regex/search path deserves focused profiling once the stabilized timing series is collected.
+
+T6 optimization work does not begin until the strengthened reference protocol has produced a credible series and identified the measured bottlenecks worth addressing.
