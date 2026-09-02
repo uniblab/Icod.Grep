@@ -42,7 +42,7 @@ The current parser represents the GNU grep 3.12 option families below.
 
 | Area | Implemented surface |
 | --- | --- |
-| Matcher selection | `-G`, `-E`, `-F`, `-P` (recognized), `-e`, `-f` |
+| Matcher selection | `-G`, `-E`, `-F`, `-P`, `-e`, `-f` |
 | Match modifiers | `-i`, `-y`, `--no-ignore-case`, `-w`, `-x`, `-v` |
 | Record mode | `-z`, `-U` |
 | Output suppression / summaries | `-q`, `-c`, `-l`, `-L`, `-s` |
@@ -58,12 +58,17 @@ The implementation also supports GNU long-option abbreviation through the shared
 
 ## Existing test coverage
 
-`tests/Grep.Tests/src/CommandTests.cs` currently covers the most important user-visible paths, including:
+`tests/Grep.Tests/src/CommandTests.cs` covers the broad user-visible command surface, while `tests/Grep.Tests/src/PcreTests.cs` supplies focused GNU `-P` / PCRE2 regression coverage. Together the current suite includes:
 
-- BRE, ERE, and fixed-string matching;
+- BRE, ERE, fixed-string, and PCRE matching;
 - multiple `-e` / `-f` sources and empty-pattern semantics;
 - UTF-8 BOM preservation in pattern files;
 - case-insensitive, word, line, and inverted matching;
+- PCRE lookbehind, backreferences, Unicode properties, and invalid-pattern diagnostics;
+- GNU ASCII-only PCRE `\d`, Unicode `[[:digit:]]`, and PCRE2 `(?-aD)` pattern override behavior;
+- C/POSIX arbitrary-byte PCRE matching and UTF-8/UCP behavior;
+- `-P -z` matching across embedded newlines and embedded-NUL pattern data from `-f`;
+- malformed UTF-8 PCRE selection/output suppression and exact `-a` output;
 - `-o`, line numbers, and byte offsets;
 - counts, max-count, quiet mode, and seekable-stdin repositioning;
 - file-list modes;
@@ -73,14 +78,13 @@ The implementation also supports GNU long-option abbreviation through the shared
 - filename prefixes, labels, NUL delimiters, and initial-tab alignment;
 - recursion, include/exclude ordering, and directory pruning;
 - directory skipping and input diagnostics;
-- conflicting matcher diagnostics and unavailable Perl mode;
-- forced match coloring;
+- forced match coloring and PCRE interaction with `-i`, `-o`, and color;
 - help/version control paths;
 - cancellation and output failures.
 
 This is a strong functional base. The remaining work should add focused conformance tests rather than replace the current suite.
 
-## Open compatibility gaps
+## Compatibility gaps and closure status
 
 ### G01 — Perl-compatible regular expressions (`-P`)
 
@@ -88,6 +92,8 @@ This is a strong functional base. The remaining work should add focused conforma
 **Status:** Closed in `1.4.0`
 
 `Icod.Grep 1.4.0` uses PCRE.NET 1.6.0, which embeds PCRE2 10.48 and supplies native libraries for the repository's Windows/Linux/macOS x64/ARM64 release matrix. C/POSIX locale mode uses PCRE2's 8-bit byte semantics. UTF-8 locale mode enables UTF, UCP, malformed-UTF support, and PCRE2's ASCII-`\d` extra option so GNU grep's `\d` versus `[[:digit:]]` distinction is retained. Grep continues to own `-w`, `-x`, output selection, byte offsets, coloring, and binary/encoding-output policy around the PCRE provider.
+
+The NuGet package and standalone RID archives carry `THIRD-PARTY-NOTICES.md` alongside the redistributed PCRE.NET / PCRE2 runtime. Exact package verification requires the managed PCRE assembly, all six native assets, and the notice; archive construction likewise requires the notice and executes a real PCRE smoke on matching hosts.
 
 **Closure criteria:**
 
@@ -234,7 +240,7 @@ G03 is closed. `Icod.DCurses 0.1.0` supplies the canonical terminal stack; grep 
 
 ### T4 — PCRE support — complete in `1.4.0`
 
-G01 is closed with PCRE.NET 1.6.0 / PCRE2 10.48. PCRE remains a Grep-local dependency rather than expanding `Icod.CommandFramework` with a heavyweight native dependency.
+G01 is closed with PCRE.NET 1.6.0 / PCRE2 10.48. PCRE remains a Grep-local dependency rather than expanding `Icod.CommandFramework` with a heavyweight native dependency. Native packaging and redistribution notices are now part of the verified package/archive contract.
 
 ### T5 — Edge compatibility
 
@@ -242,4 +248,6 @@ Close G08 and G09 with targeted tests and implementation only where the selected
 
 ## Release assessment
 
-Version `1.0.1` was the maintenance release that established this audit. Version `1.1.0` is the first parity release and closes G04, G05, and G06. The original `1.0.1` assessment was: the `Icod.CommandFramework` dependency has moved to `2.1.0`, the NuGet package now has an icon, CI/CD has been standardized, and this audit establishes the remaining GNU grep 3.12 closure work. The audit does **not** claim that the gaps above are fixed in `1.0.1`.
+Version `1.0.1` was the maintenance release that established this audit. The parity sequence then closed the identified command-behavior gaps in discrete releases: `1.1.0` closed G04, G05, and G06; `1.2.0` closed G03; `1.3.0` closed G02 and G07 for the documented C/POSIX and UTF-8 profiles; and `1.4.0` closes G01 with PCRE.NET 1.6.0 / PCRE2 10.48 plus verified native packaging across the supported release RIDs.
+
+After `1.4.0`, the remaining core compatibility work is T5: G08 Windows CRLF/text-mode conformance and G09 multi-character locale collating elements. G10 remains optional historical command-name compatibility and is not required for core `grep` completeness.
