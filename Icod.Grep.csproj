@@ -13,14 +13,14 @@
 		<AssemblyName>grep</AssemblyName>
 		<RootNamespace>Icod.Grep</RootNamespace>
 		<Configurations>Debug;Release;Staging</Configurations>
-		<Version>1.4.0</Version>
-		<AssemblyVersion>1.4.0.0</AssemblyVersion>
+		<Version>1.5.0</Version>
+		<AssemblyVersion>1.5.0.0</AssemblyVersion>
 		<DebugType>portable</DebugType>
 		<DebugSymbols>true</DebugSymbols>
 		<SignAssembly>false</SignAssembly>
 	</PropertyGroup>
 	<PropertyGroup>
-		<PackageVersion>1.4.0</PackageVersion>
+		<PackageVersion>1.5.0</PackageVersion>
 		<PackAsTool>true</PackAsTool>
 		<ToolCommandName>grep</ToolCommandName>
 		<PackageId>Icod.Grep</PackageId>
@@ -33,7 +33,7 @@
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
 		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
-		<PackageReleaseNotes>Adds GNU grep 3.12 -P/--perl-regexp support through PCRE.NET 1.6.0 / PCRE2 10.48, including byte-preserving C/POSIX mode, UTF-8/UCP behavior, GNU-compatible ASCII \d semantics, and native runtime validation across supported release RIDs.</PackageReleaseNotes>
+		<PackageReleaseNotes>Develops GNU grep 3.12 T5 edge compatibility for Windows CRLF/text-mode conformance and multi-character locale collating elements.</PackageReleaseNotes>
 		<PackageTags>grep;gnu-grep;gnu;search;text-search;regex;regular-expression;cli;command-line;tool;dotnet-tool;icod;posix;bre;ere;pcre;pcre2;perl-regexp;fixed-strings;recursive-search;cross-platform;net10;dotnet</PackageTags>
 		<PackageIcon>icon.png</PackageIcon>
 	</PropertyGroup>
