@@ -188,6 +188,7 @@ try {
     Copy-Item -LiteralPath $publishedExecutable -Destination (Join-Path $stageDirectory $executableFileName)
     Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination (Join-Path $stageDirectory 'LICENSE')
     Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination (Join-Path $stageDirectory 'README.md')
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'THIRD-PARTY-NOTICES.md') -Destination (Join-Path $stageDirectory 'THIRD-PARTY-NOTICES.md')
 
     $currentRid = Get-CurrentRuntimeIdentifier
     if ($RuntimeIdentifier -eq $currentRid) {
@@ -229,7 +230,7 @@ try {
     Assert-ArchiveContents `
         -ArchivePath $archivePath `
         -RootDirectoryName $stageDirectoryName `
-        -ExpectedFileNames @($executableFileName, 'LICENSE', 'README.md')
+        -ExpectedFileNames @($executableFileName, 'LICENSE', 'README.md', 'THIRD-PARTY-NOTICES.md')
 
     Write-Host ''
     Write-Host "Created release archive: $archivePath"
