@@ -2,110 +2,52 @@ namespace Icod.Grep;
 
 /// <summary>Tracks and implements GNU grep's Windows text-versus-binary stream policy.</summary>
 internal static class PlatformIoContext {
+	private static readonly AsyncLocal<bool> ProcessModeActive = new();
 	private static readonly AsyncLocal<bool> WindowsTextMode = new();
 
 	internal static bool IsWindowsTextMode => WindowsTextMode.Value;
 
-	internal static IDisposable EnterProcessMode( IReadOnlyList<string> args ) {
-		ArgumentNullException.ThrowIfNull( args );
-		var previous = WindowsTextMode.Value;
-		WindowsTextMode.Value = OperatingSystem.IsWindows() && !HasBinaryPlatformOption( args );
-		return new RestoreScope( previous );
+	internal static IDisposable EnterProcessMode() {
+		var previousProcessMode = ProcessModeActive.Value;
+		var previousWindowsTextMode = WindowsTextMode.Value;
+		ProcessModeActive.Value = true;
+		WindowsTextMode.Value = OperatingSystem.IsWindows();
+		return new RestoreScope( previousProcessMode, previousWindowsTextMode );
 	}
 
 	internal static IDisposable EnterWindowsTextModeForTesting() {
-		var previous = WindowsTextMode.Value;
+		var previousProcessMode = ProcessModeActive.Value;
+		var previousWindowsTextMode = WindowsTextMode.Value;
+		ProcessModeActive.Value = false;
 		WindowsTextMode.Value = true;
-		return new RestoreScope( previous );
+		return new RestoreScope( previousProcessMode, previousWindowsTextMode );
+	}
+
+	internal static void ApplyParsedBinaryPlatformMode( bool binaryPlatformMode ) {
+		if ( !ProcessModeActive.Value ) {
+			return;
+		}
+		WindowsTextMode.Value = OperatingSystem.IsWindows() && !binaryPlatformMode;
 	}
 
 	internal static Stream WrapStandardInput( Stream stream ) {
 		ArgumentNullException.ThrowIfNull( stream );
-		return IsWindowsTextMode
-			? new WindowsTextInputStream( stream, leaveOpen: true )
+		return OperatingSystem.IsWindows()
+			? new DeferredPlatformInputStream( stream )
 			: stream;
 	}
 
 	internal static Stream WrapStandardOutput( Stream stream ) {
 		ArgumentNullException.ThrowIfNull( stream );
-		return IsWindowsTextMode
-			? new WindowsTextOutputStream( stream, leaveOpen: true )
+		return OperatingSystem.IsWindows()
+			? new DeferredPlatformOutputStream( stream )
 			: stream;
 	}
 
-	private static bool HasBinaryPlatformOption( IReadOnlyList<string> args ) {
-		var parsingOptions = true;
-		var consumeNextValue = false;
-		var requireOrder = Environment.GetEnvironmentVariable( "POSIXLY_CORRECT" ) is not null;
-		foreach ( var argument in args ) {
-			if ( consumeNextValue ) {
-				consumeNextValue = false;
-				continue;
-			}
-			if ( !parsingOptions ) {
-				continue;
-			}
-			if ( "--" == argument ) {
-				parsingOptions = false;
-				continue;
-			}
-			if ( argument.Length < 2 || '-' != argument[0] ) {
-				if ( requireOrder ) {
-					parsingOptions = false;
-				}
-				continue;
-			}
-			if ( '-' == argument[1] ) {
-				if ( "--binary" == argument ) {
-					return true;
-				}
-				if ( IsRequiredLongOptionWithoutAttachedValue( argument ) ) {
-					consumeNextValue = true;
-				}
-				continue;
-			}
-			for ( var index = 1; index < argument.Length; index++ ) {
-				var option = argument[index];
-				if ( 'U' == option ) {
-					return true;
-				}
-				if ( IsRequiredShortOption( option ) ) {
-					if ( index == argument.Length - 1 ) {
-						consumeNextValue = true;
-					}
-					break;
-				}
-			}
-		}
-		return false;
-	}
-
-	private static bool IsRequiredLongOptionWithoutAttachedValue( string argument ) {
-		if ( argument.Contains( '=', StringComparison.Ordinal ) ) {
-			return false;
-		}
-		return argument is
-			"--regexp"
-			or "--file"
-			or "--max-count"
-			or "--label"
-			or "--binary-files"
-			or "--directories"
-			or "--devices"
-			or "--include"
-			or "--exclude"
-			or "--exclude-from"
-			or "--exclude-dir"
-			or "--before-context"
-			or "--after-context"
-			or "--context"
-			or "--group-separator";
-	}
-
-	private static bool IsRequiredShortOption( char option ) => option is
-		'e' or 'f' or 'm' or 'd' or 'D' or 'B' or 'A' or 'C';
-
-	private sealed class RestoreScope( bool previous ) : IDisposable {
+	private sealed class RestoreScope(
+		bool previousProcessMode,
+		bool previousWindowsTextMode
+	) : IDisposable {
 		private bool disposed;
 
 		public void Dispose() {
@@ -113,8 +55,109 @@ internal static class PlatformIoContext {
 				return;
 			}
 			this.disposed = true;
-			WindowsTextMode.Value = previous;
+			ProcessModeActive.Value = previousProcessMode;
+			WindowsTextMode.Value = previousWindowsTextMode;
 		}
+	}
+}
+
+/// <summary>Defers Windows standard-input text/binary selection until command options have been parsed.</summary>
+internal sealed class DeferredPlatformInputStream : Stream {
+	private readonly Stream source;
+	private Stream? effective;
+
+	internal DeferredPlatformInputStream( Stream source ) {
+		this.source = source ?? throw new ArgumentNullException( nameof( source ) );
+		if ( !source.CanRead ) {
+			throw new ArgumentException( "The source stream must be readable.", nameof( source ) );
+		}
+	}
+
+	private Stream Effective => this.effective ??= PlatformIoContext.IsWindowsTextMode
+		? new WindowsTextInputStream( this.source, leaveOpen: true )
+		: this.source;
+
+	public override bool CanRead => this.source.CanRead;
+	public override bool CanSeek => this.Effective.CanSeek;
+	public override bool CanWrite => false;
+	public override long Length => this.Effective.Length;
+	public override long Position {
+		get => this.Effective.Position;
+		set => this.Effective.Position = value;
+	}
+
+	public override void Flush() {
+	}
+	public override int Read( byte[] buffer, int offset, int count ) => this.Effective.Read( buffer, offset, count );
+	public override int Read( Span<byte> buffer ) => this.Effective.Read( buffer );
+	public override ValueTask<int> ReadAsync( Memory<byte> buffer, CancellationToken cancellationToken = default ) =>
+		this.Effective.ReadAsync( buffer, cancellationToken );
+	public override long Seek( long offset, SeekOrigin origin ) => this.Effective.Seek( offset, origin );
+	public override void SetLength( long value ) => throw new NotSupportedException();
+	public override void Write( byte[] buffer, int offset, int count ) => throw new NotSupportedException();
+
+	protected override void Dispose( bool disposing ) {
+		if ( disposing && this.effective is not null && !ReferenceEquals( this.effective, this.source ) ) {
+			this.effective.Dispose();
+		}
+		base.Dispose( disposing );
+	}
+
+	public override async ValueTask DisposeAsync() {
+		if ( this.effective is not null && !ReferenceEquals( this.effective, this.source ) ) {
+			await this.effective.DisposeAsync().ConfigureAwait( false );
+		}
+		GC.SuppressFinalize( this );
+	}
+}
+
+/// <summary>Defers Windows standard-output text/binary selection until command options have been parsed.</summary>
+internal sealed class DeferredPlatformOutputStream : Stream {
+	private readonly Stream destination;
+	private Stream? effective;
+
+	internal DeferredPlatformOutputStream( Stream destination ) {
+		this.destination = destination ?? throw new ArgumentNullException( nameof( destination ) );
+		if ( !destination.CanWrite ) {
+			throw new ArgumentException( "The destination stream must be writable.", nameof( destination ) );
+		}
+	}
+
+	private Stream Effective => this.effective ??= PlatformIoContext.IsWindowsTextMode
+		? new WindowsTextOutputStream( this.destination, leaveOpen: true )
+		: this.destination;
+
+	public override bool CanRead => false;
+	public override bool CanSeek => false;
+	public override bool CanWrite => this.destination.CanWrite;
+	public override long Length => throw new NotSupportedException();
+	public override long Position {
+		get => throw new NotSupportedException();
+		set => throw new NotSupportedException();
+	}
+
+	public override void Flush() => this.Effective.Flush();
+	public override Task FlushAsync( CancellationToken cancellationToken ) => this.Effective.FlushAsync( cancellationToken );
+	public override int Read( byte[] buffer, int offset, int count ) => throw new NotSupportedException();
+	public override long Seek( long offset, SeekOrigin origin ) => throw new NotSupportedException();
+	public override void SetLength( long value ) => throw new NotSupportedException();
+	public override void Write( byte[] buffer, int offset, int count ) => this.Effective.Write( buffer, offset, count );
+	public override void Write( ReadOnlySpan<byte> buffer ) => this.Effective.Write( buffer );
+	public override ValueTask WriteAsync( ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default ) =>
+		this.Effective.WriteAsync( buffer, cancellationToken );
+
+	protected override void Dispose( bool disposing ) {
+		if ( disposing && this.effective is not null && !ReferenceEquals( this.effective, this.destination ) ) {
+			this.effective.Dispose();
+		}
+		base.Dispose( disposing );
+	}
+
+	public override async ValueTask DisposeAsync() {
+		if ( this.effective is not null && !ReferenceEquals( this.effective, this.destination ) ) {
+			await this.effective.DisposeAsync().ConfigureAwait( false );
+		}
+		GC.SuppressFinalize( this );
 	}
 }
 
