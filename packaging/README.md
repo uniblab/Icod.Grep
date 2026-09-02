@@ -3,7 +3,7 @@
 `Icod.Grep` has two supported distribution forms:
 
 1. a framework-dependent .NET tool package with package ID `Icod.Grep` and command name `grep`;
-2. runtime-specific ZIP archives containing a single published `grep` executable plus `README.md` and `LICENSE`.
+2. runtime-specific ZIP archives containing a single published `grep` executable plus `README.md`, `LICENSE`, and `THIRD-PARTY-NOTICES.md`.
 
 The ZIP archives are produced for:
 
@@ -15,6 +15,8 @@ The ZIP archives are produced for:
 - `osx-arm64`
 
 The default ZIPs are framework-dependent and therefore require the .NET 10 runtime. `BuildReleaseArchive.ps1` also accepts `-SelfContained` for manual builds when a self-contained archive is useful.
+
+`Icod.Grep 1.4.0` adds PCRE.NET 1.6.0 / PCRE2 10.48 for `-P`. Because this introduces architecture-specific native payloads, the package and archive gates verify both the PCRE runtime files and the accompanying third-party notices.
 
 ## Lifecycle
 
@@ -47,7 +49,7 @@ pwsh ./packaging/VerifyDistribution.ps1 -Configuration Release
 
 The deep validation script restores, builds, and tests the solution; exercises the directly built `grep`; creates the `.nupkg`; verifies that it declares exactly one .NET tool command named `grep`; installs the package into an isolated tool path; and exercises the installed tool.
 
-`VerifyPackageArtifact.ps1` is the narrower exact-package gate used by automated package-producing jobs. It verifies the expected package identity and version, the .NET tool settings, the `grep` command/runner, the package icon, and required package payload files without rebuilding the product.
+`VerifyPackageArtifact.ps1` is the narrower exact-package gate used by automated package-producing jobs. It verifies the expected package identity and version, the .NET tool settings, the `grep` command/runner, the package icon, `README.md`, `LICENSE`, `THIRD-PARTY-NOTICES.md`, `PCRE.NET.dll`, and the six required native PCRE.NET payloads without rebuilding the product.
 
 ## Build one ZIP archive
 
@@ -63,13 +65,15 @@ The resulting archive is written under `artifacts/release/` with a name such as:
 Icod.Grep-1.4.0-win-x64.zip
 ```
 
-The archive builder structurally verifies the archive and executes the staged command whenever the requested RID matches the current host.
+The archive builder structurally verifies that the executable, `README.md`, `LICENSE`, and `THIRD-PARTY-NOTICES.md` are present and executes a real PCRE lookbehind smoke whenever the requested RID matches the current host.
 
 ## CI and release contract
 
-Pull requests build and test Staging on Windows, Linux, and macOS. Linux produces and exactly verifies the tool package once; that same package artifact is then installed and exercised on all three host families.
+Pull requests build and test Staging on Windows, Linux, and macOS. Linux produces and exactly verifies the tool package once; that same package artifact is then installed and exercised on all three host families, including a real `grep -P` lookbehind smoke.
 
-Pushes to `main` run Release validation on the six supported OS/architecture runners. Each runner builds/tests the solution and builds/smokes its matching RID archive. Linux x64 additionally produces and exactly verifies the platform-neutral .NET tool package. No publication occurs from `main`.
+Because PCRE.NET carries architecture-specific native code, pull requests also build and smoke the matching standalone archive on all six supported RIDs: Windows x64, Windows ARM64, Linux x64, Linux ARM64, macOS x64, and macOS ARM64. This makes architecture-specific PCRE packaging failures PR-blocking rather than deferring them until `main` or release publication.
+
+Pushes to `main` run Release validation on the same six supported OS/architecture runners. Each runner builds/tests the solution and builds/smokes its matching RID archive. Linux x64 additionally produces and exactly verifies the platform-neutral .NET tool package. No publication occurs from `main`.
 
 `distribution-validation.yaml` is manual-only and runs the deeper `VerifyDistribution.ps1` diagnostic on the six supported runners with a selected Debug, Staging, or Release configuration.
 
