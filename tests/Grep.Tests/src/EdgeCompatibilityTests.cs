@@ -26,6 +26,27 @@ public sealed class EdgeCompatibilityTests {
 		}
 	}
 
+	/// <summary>Verifies fixed strings and PCRE observe the same translated Windows record contents.</summary>
+	/// <returns>A task representing the test.</returns>
+	[Fact]
+	public async Task WindowsTextModeIsSharedByFixedAndPcreMatchers() {
+		var path = System.IO.Path.GetTempFileName();
+		try {
+			await File.WriteAllBytesAsync( path, "alpha\r\nbeta\r\n"u8.ToArray() );
+			using var platformMode = PlatformIoContext.EnterWindowsTextModeForTesting();
+
+			var fixedString = await RunAsync( [ "-Fx", "alpha", path ], Array.Empty<byte>() );
+			Assert.Equal( CommandExitCodes.Success, fixedString.Status );
+			Assert.Equal( "alpha\n"u8.ToArray(), fixedString.Output );
+
+			var pcre = await RunAsync( [ "-P", "^alpha$", path ], Array.Empty<byte>() );
+			Assert.Equal( CommandExitCodes.Success, pcre.Status );
+			Assert.Equal( "alpha\n"u8.ToArray(), pcre.Output );
+		} finally {
+			File.Delete( path );
+		}
+	}
+
 	/// <summary>Verifies Windows default text-mode byte offsets are measured after CRLF translation.</summary>
 	/// <returns>A task representing the test.</returns>
 	[Fact]
@@ -53,6 +74,38 @@ public sealed class EdgeCompatibilityTests {
 			var result = await RunAsync( [ "-b", "^[bc]$", path ], Array.Empty<byte>() );
 			Assert.Equal( CommandExitCodes.Success, result.Status );
 			Assert.Equal( "2:b\n4:c\n"u8.ToArray(), result.Output );
+		} finally {
+			File.Delete( path );
+		}
+	}
+
+	/// <summary>Verifies context records are selected and emitted from translated Windows text input.</summary>
+	/// <returns>A task representing the test.</returns>
+	[Fact]
+	public async Task WindowsTextModePreservesContextSemantics() {
+		var path = System.IO.Path.GetTempFileName();
+		try {
+			await File.WriteAllBytesAsync( path, "before\r\nhit\r\nafter\r\n"u8.ToArray() );
+			using var platformMode = PlatformIoContext.EnterWindowsTextModeForTesting();
+			var result = await RunAsync( [ "-C", "1", "hit", path ], Array.Empty<byte>() );
+			Assert.Equal( CommandExitCodes.Success, result.Status );
+			Assert.Equal( "before\nhit\nafter\n"u8.ToArray(), result.Output );
+		} finally {
+			File.Delete( path );
+		}
+	}
+
+	/// <summary>Verifies text translation still applies to embedded CRLF when NUL is the grep record separator.</summary>
+	/// <returns>A task representing the test.</returns>
+	[Fact]
+	public async Task WindowsTextModeTranslatesCrLfInsideNullDataRecords() {
+		var path = System.IO.Path.GetTempFileName();
+		try {
+			await File.WriteAllBytesAsync( path, "a\r\nb\0other\0"u8.ToArray() );
+			using var platformMode = PlatformIoContext.EnterWindowsTextModeForTesting();
+			var result = await RunAsync( [ "-zP", "(?s)^a\\nb$", path ], Array.Empty<byte>() );
+			Assert.Equal( CommandExitCodes.Success, result.Status );
+			Assert.Equal( "a\nb\0"u8.ToArray(), result.Output );
 		} finally {
 			File.Delete( path );
 		}
@@ -111,6 +164,30 @@ public sealed class EdgeCompatibilityTests {
 		var result = await RunAsync( [ "-Ubo", "beta" ], source );
 		Assert.Equal( CommandExitCodes.Success, result.Status );
 		Assert.Equal( "7:beta\n"u8.ToArray(), result.Output );
+	}
+
+	/// <summary>Verifies <c>-U</c> does not treat Control-Z as end-of-file.</summary>
+	/// <returns>A task representing the test.</returns>
+	[Fact]
+	public async Task BinaryPlatformModePreservesControlZAsData() {
+		var source = new byte[] {
+			(byte)'b', (byte)'e', (byte)'f', (byte)'o', (byte)'r', (byte)'e', 0x1A,
+			(byte)'a', (byte)'f', (byte)'t', (byte)'e', (byte)'r', (byte)'\n'
+		};
+		var result = await RunAsync( [ "-U", "after" ], source );
+		Assert.Equal( CommandExitCodes.Success, result.Status );
+		Assert.Equal( source, result.Output );
+	}
+
+	/// <summary>Verifies <c>-U</c> is behaviorally neutral for ordinary LF data.</summary>
+	/// <returns>A task representing the test.</returns>
+	[Fact]
+	public async Task BinaryPlatformModeIsNeutralForLfData() {
+		var source = "alpha\nbeta\n"u8.ToArray();
+		var normal = await RunAsync( [ "beta" ], source );
+		var binary = await RunAsync( [ "-U", "beta" ], source );
+		Assert.Equal( normal.Status, binary.Status );
+		Assert.Equal( normal.Output, binary.Output );
 	}
 
 	/// <summary>Verifies the current shared-engine boundary for multi-scalar collating elements remains a controlled diagnostic.</summary>
