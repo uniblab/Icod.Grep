@@ -7,8 +7,21 @@ public static class Program {
 	/// <summary>Runs the GNU-compatible pattern-search command.</summary>
 	/// <param name="args">The command-line arguments.</param>
 	/// <returns>A task whose result is the process exit status.</returns>
-	public static Task<int> Main( string[] args ) => Command.RunAsync(
-		args,
-		CommandContext.CreateConsole( "grep" )
-	);
+	public static async Task<int> Main( string[] args ) {
+		ArgumentNullException.ThrowIfNull( args );
+		using var platformMode = PlatformIoContext.EnterProcessMode( args );
+		var standardInput = Console.OpenStandardInput();
+		var standardOutput = Console.OpenStandardOutput();
+		var standardError = Console.OpenStandardError();
+		var context = new CommandContext(
+			"grep",
+			Console.In,
+			Console.Out,
+			Console.Error,
+			PlatformIoContext.WrapStandardInput( standardInput ),
+			PlatformIoContext.WrapStandardOutput( standardOutput ),
+			standardError
+		);
+		return await Command.RunAsync( args, context ).ConfigureAwait( false );
+	}
 }
