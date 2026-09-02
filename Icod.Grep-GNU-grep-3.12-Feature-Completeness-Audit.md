@@ -3,7 +3,7 @@
 **Audit baseline:** `main` at `996861022cf1d28e3a6977df6e900df98fd7ff98`  
 **Target:** GNU grep 3.12 command behavior  
 **Audit release:** `1.0.1`  
-**Current parity release:** `1.2.0` — T3 color completeness closes G03; T2 closed G04, G05, and G06
+**Current parity release:** `1.3.0` — T1 locale/encoding parity closes the documented C/POSIX and UTF-8 scope of G02/G07; T3 closed G03 and T2 closed G04–G06
 
 ## Executive summary
 
@@ -12,17 +12,17 @@
 The repository is **not yet feature-complete against GNU grep 3.12**. The remaining work is concentrated in a relatively small number of compatibility areas rather than in ordinary line matching:
 
 1. Perl-compatible regular expressions (`-P`) are recognized but unavailable.
-2. GNU locale/environment selection is not wired into matching and pattern decoding.
+2. ✅ GNU locale/environment selection for the supported C/POSIX and UTF-8 profiles is implemented in `1.3.0`.
 3. ✅ GNU color behavior is complete for the GNU grep 3.12 `GREP_COLORS` / terminal-environment contract in `1.2.0`.
 4. ✅ `POSIXLY_CORRECT` option-order behavior is implemented in `1.1.0`.
 5. ✅ Default device handling under `-r` is aligned with GNU grep in `1.1.0`.
 6. ✅ `-o` combined with context options follows GNU's warning/no-effect contract in `1.1.0`.
-7. Binary classification does not yet account for locale encoding errors the way GNU grep does.
+7. ✅ Malformed UTF-8 output suppression now follows GNU grep's record-level encoding-error behavior in `1.3.0`.
 8. Cross-platform text-mode/CRLF behavior needs explicit GNU-parity tests.
 9. Multi-character locale collating elements remain outside the shared managed regex engine.
 10. `egrep` / `fgrep` compatibility entry points are not supplied; GNU itself treats these names as obsolescent.
 
-Items 1–3 remain concrete implementation gaps. Items 4–6 are closed by the `1.1.0` T2 command-semantics tranche. Items 7–10 remain compatibility boundaries or parity risks that should be closed with targeted tests and, where necessary, implementation work.
+G01 remains the only high-priority implementation gap. G02–G07 are closed within their documented scopes. G08 and G09 remain parity/engine-edge work, while G10 is optional historical command-name compatibility.
 
 ## Baseline sources
 
@@ -99,11 +99,11 @@ A silent translation to .NET regular expressions would not be sufficient for GNU
 ### G02 — Locale and environment selection
 
 **Priority:** High  
-**Status:** Incomplete
+**Status:** Closed for the documented C/POSIX and UTF-8 scope in `1.3.0`
 
-GNU grep uses `LC_ALL`, category-specific `LC_*` variables, and `LANG` to determine character encoding, character classes, case folding, and collation. The current implementation selects `UnicodeRegularExpressionCharacterClassProvider.CurrentCulture` and the regex byte matcher defaults to UTF-8 decoding. Pattern files are also decoded as UTF-8 unconditionally.
+`Icod.Grep 1.3.0` resolves `LC_ALL`, `LC_CTYPE`, `LC_COLLATE`, and `LANG` with category-specific precedence. `LC_CTYPE` selects C/POSIX byte semantics versus the supported UTF-8 Unicode profile and supplies classification/case behavior; `LC_COLLATE` independently supplies range/equivalence ordering. The implementation composes the existing `Icod.CommandFramework` C-locale and Unicode regular-expression providers rather than duplicating their class/collation rules.
 
-This means the process environment does not currently provide GNU's `C`/`POSIX` byte-locale behavior or category-specific locale selection.
+Pattern files follow the same effective character-encoding contract: C/POSIX uses a one-byte Latin-1 transport to preserve every source byte, while UTF-8 profiles use strict UTF-8 decoding. Command-line pattern strings are re-exposed as their UTF-8 argument bytes when the effective C/POSIX profile is byte-oriented.
 
 **Closure criteria:**
 
@@ -116,9 +116,9 @@ This means the process environment does not currently provide GNU's `C`/`POSIX` 
 ### G03 — GNU color model and terminal environment
 
 **Priority:** Medium  
-**Status:** Partial
+**Status:** Closed in `1.2.0`
 
-The current implementation supports `--color=never|auto|always` aliases and highlights matched spans with a fixed bold-red sequence. GNU grep additionally uses `GREP_COLORS` (and the obsolescent `GREP_COLOR`) to color matched text, whole selected/context lines, filenames, line numbers, byte offsets, and separators. GNU `auto` behavior also considers `TERM`.
+`Icod.Grep 1.2.0` implements GNU `GREP_COLORS` capabilities, the obsolescent `GREP_COLOR` fallback/warning contract, selected/context and prefix/separator styling, `rv`, `ne`, and `TERM=dumb` suppression for `--color=auto`. Terminal attachment is observed through the `Icod.DCurses` / `Icod.Terminal` stack without opening a curses session.
 
 **Closure criteria:**
 
@@ -171,9 +171,9 @@ When context is requested with `-o`, `Icod.Grep` now emits a warning, clears con
 ### G07 — Encoding-error binary classification
 
 **Priority:** Medium  
-**Status:** Needs implementation and parity tests
+**Status:** Closed in `1.3.0`
 
-GNU grep treats NUL characters as ordinary matchable characters, but unless `-a` is used it can classify data as binary when NULs are present or when locale encoding errors would otherwise be emitted. `Icod.Grep` currently detects binary input primarily by probing for NUL bytes.
+NUL discovery remains the file-level binary heuristic. Under a UTF-8 locale, malformed UTF-8 is handled separately at record granularity: the record still participates in matching, status, and counts, but unsafe detailed record output is suppressed unless `-a` / text mode is selected. This reproduces GNU grep 3.12's `encoding-error` regression behavior, including `-I` continuing to report valid records elsewhere in the same non-NUL file.
 
 **Closure criteria:**
 
@@ -219,9 +219,9 @@ No change is required for core `grep` completeness. If command-name compatibilit
 
 ## Recommended closure order
 
-### T1 — Locale and byte contract
+### T1 — Locale and byte contract — complete in `1.3.0`
 
-Address G02 and G07 together. They share the same locale-selection and decoding boundary and should not be implemented independently.
+G02 and G07 are closed for the repository's documented C/POSIX and UTF-8 profiles. LC_CTYPE controls byte-vs-UTF-8 decoding and character classes; LC_COLLATE is resolved independently for collation; C-locale pattern files preserve byte identity; malformed UTF-8 selected records affect matching/status but unsafe record output is suppressed unless `-a` is used, matching GNU grep 3.12's encoding-error regression contract.
 
 ### T2 — Command semantics — complete in `1.1.0`
 

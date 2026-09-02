@@ -11,11 +11,12 @@ using Icod.CommandFramework.FileSystem.Traversal;
 using Icod.CommandFramework.IO;
 using Icod.CommandFramework.Records;
 using Icod.CommandFramework.RegularExpressions;
+using Icod.CommandFramework.Text;
 using Icod.Terminal;
 
 /// <summary>Implements GNU-compatible pattern searching over byte-preserving input records.</summary>
 public static class Command {
-	private const string VersionText = "grep (Icod.Grep) 1.2.0";
+	private const string VersionText = "grep (Icod.Grep) 1.3.0";
 	private const int BinaryProbeLength = 98_304;
 	private static readonly byte[] ColorReset = "\u001b[m"u8.ToArray();
 	private static readonly byte[] EraseLine = "\u001b[K"u8.ToArray();
@@ -70,7 +71,7 @@ public static class Command {
 	private sealed record PatternSource( PatternSourceKind Kind, string Value );
 	private sealed record MatchSpan( int Index, int Length );
 	private sealed record InputSource( string AccessPath, string DisplayName, bool IsStandardInput );
-	private sealed record LineRecord( byte[] Content, bool IsTerminated, long LineNumber, long ByteOffset );
+	private sealed record LineRecord( byte[] Content, bool IsTerminated, long LineNumber, long ByteOffset, bool HasEncodingError );
 	private sealed record SourceResult( bool HasSelectedRecord, bool StopCommand, bool WroteRecordOutput );
 	private sealed record PathRule( bool Include, PathnamePattern Pattern );
 
@@ -111,6 +112,7 @@ public static class Command {
 		public bool Recursive => DirectoryMode == DirectoryMode.Recurse;
 		public bool ColorEnabled { get; set; }
 		public GrepColorProfile ColorProfile { get; set; } = GrepColorProfile.Default;
+		public GrepLocaleProfile Locale { get; set; } = GrepLocaleProfile.Resolve( null, null, null, null );
 	}
 
 	private sealed class PrefixReadStream : Stream {
@@ -178,10 +180,14 @@ public static class Command {
 
 	private sealed class RegularExpressionPattern : IGrepPattern {
 		private readonly ICompiledRegularExpression expression;
-		private readonly RegularExpressionInputOptions inputOptions = new();
+		private readonly RegularExpressionInputOptions inputOptions;
 
-		public RegularExpressionPattern( ICompiledRegularExpression expression ) {
+		public RegularExpressionPattern(
+			ICompiledRegularExpression expression,
+			RegularExpressionInputOptions inputOptions
+		) {
 			this.expression = expression;
+			this.inputOptions = inputOptions;
 		}
 
 		public MatchSpan? Find( ReadOnlyMemory<byte> input, int startOffset, CancellationToken cancellationToken ) {
@@ -205,16 +211,21 @@ public static class Command {
 		private readonly bool ignoreCase;
 		private readonly byte[] pattern;
 		private readonly Rune[] patternRunes;
+		private readonly TextDecodingMode decodingMode;
 
 		public FixedPattern(
 			string pattern,
 			bool ignoreCase,
-			IRegularExpressionCharacterClassProvider characterClassProvider
+			IRegularExpressionCharacterClassProvider characterClassProvider,
+			TextDecodingMode decodingMode
 		) {
-			this.pattern = Encoding.UTF8.GetBytes( pattern );
+			this.pattern = TextDecodingMode.Bytes == decodingMode
+				? Encoding.Latin1.GetBytes( pattern )
+				: Encoding.UTF8.GetBytes( pattern );
 			this.patternRunes = pattern.EnumerateRunes().ToArray();
 			this.ignoreCase = ignoreCase;
 			this.characterClassProvider = characterClassProvider;
+			this.decodingMode = decodingMode;
 		}
 
 		public MatchSpan? Find( ReadOnlyMemory<byte> input, int startOffset, CancellationToken cancellationToken ) {
@@ -244,11 +255,19 @@ public static class Command {
 						matches = false;
 						break;
 					}
-					var status = Rune.DecodeFromUtf8( input[position..], out var actual, out var consumed );
-					if (
-						status != System.Buffers.OperationStatus.Done
-						|| !this.characterClassProvider.AreCharactersEqual( actual, expected, ignoreCase: true )
+					Rune actual;
+					int consumed;
+					if ( TextDecodingMode.Bytes == this.decodingMode ) {
+						actual = new Rune( input[position] );
+						consumed = 1;
+					} else if (
+						Rune.DecodeFromUtf8( input[position..], out actual, out consumed )
+						!= System.Buffers.OperationStatus.Done
 					) {
+						matches = false;
+						break;
+					}
+					if ( !this.characterClassProvider.AreCharactersEqual( actual, expected, ignoreCase: true ) ) {
 						matches = false;
 						break;
 					}
@@ -281,17 +300,20 @@ public static class Command {
 		private readonly bool wordRegexp;
 		private readonly bool lineRegexp;
 		private readonly IRegularExpressionCharacterClassProvider characterClassProvider;
+		private readonly TextDecodingMode decodingMode;
 
 		public PatternSet(
 			IReadOnlyList<IGrepPattern> patterns,
 			bool wordRegexp,
 			bool lineRegexp,
-			IRegularExpressionCharacterClassProvider characterClassProvider
+			IRegularExpressionCharacterClassProvider characterClassProvider,
+			TextDecodingMode decodingMode
 		) {
 			this.patterns = patterns;
 			this.wordRegexp = wordRegexp;
 			this.lineRegexp = lineRegexp;
 			this.characterClassProvider = characterClassProvider;
+			this.decodingMode = decodingMode;
 		}
 
 		public bool IsEmpty => this.patterns.Count == 0;
@@ -343,14 +365,16 @@ public static class Command {
 			return output;
 		}
 
-		private static int AdvanceAfter( ReadOnlySpan<byte> input, MatchSpan match ) {
+		private int AdvanceAfter( ReadOnlySpan<byte> input, MatchSpan match ) {
 			if ( match.Length > 0 ) {
 				return match.Index + match.Length;
 			}
 			if ( match.Index >= input.Length ) {
 				return input.Length + 1;
 			}
-			var length = GetUtf8SequenceLength( input, match.Index );
+			var length = TextDecodingMode.Bytes == this.decodingMode
+				? 1
+				: GetUtf8SequenceLength( input, match.Index );
 			return match.Index + length;
 		}
 
@@ -367,20 +391,32 @@ public static class Command {
 				return true;
 			}
 			var beforeWord = match.Index > 0
-				&& TryDecodePreviousRune( input, match.Index, out var before )
+				&& this.TryDecodePreviousRune( input, match.Index, out var before )
 				&& this.characterClassProvider.IsWordCharacter( before );
 			var afterIndex = match.Index + match.Length;
 			var afterWord = afterIndex < input.Length
-				&& TryDecodeNextRune( input, afterIndex, out var after )
+				&& this.TryDecodeNextRune( input, afterIndex, out var after )
 				&& this.characterClassProvider.IsWordCharacter( after );
 			return !beforeWord && !afterWord;
 		}
 
-		private static bool TryDecodePreviousRune( ReadOnlySpan<byte> input, int index, out Rune value ) =>
-			Rune.DecodeLastFromUtf8( input[..index], out value, out _ ) == System.Buffers.OperationStatus.Done;
+		private bool TryDecodePreviousRune( ReadOnlySpan<byte> input, int index, out Rune value ) {
+			if ( TextDecodingMode.Bytes == this.decodingMode ) {
+				value = new Rune( input[index - 1] );
+				return true;
+			}
+			return Rune.DecodeLastFromUtf8( input[..index], out value, out _ )
+				== System.Buffers.OperationStatus.Done;
+		}
 
-		private static bool TryDecodeNextRune( ReadOnlySpan<byte> input, int index, out Rune value ) =>
-			Rune.DecodeFromUtf8( input[index..], out value, out _ ) == System.Buffers.OperationStatus.Done;
+		private bool TryDecodeNextRune( ReadOnlySpan<byte> input, int index, out Rune value ) {
+			if ( TextDecodingMode.Bytes == this.decodingMode ) {
+				value = new Rune( input[index] );
+				return true;
+			}
+			return Rune.DecodeFromUtf8( input[index..], out value, out _ )
+				== System.Buffers.OperationStatus.Done;
+		}
 	}
 
 	private sealed class GrepTraversalSelector : IPathTraversalSelector {
@@ -639,7 +675,7 @@ public static class Command {
 		Stream standardInput,
 		CommandContext context
 	) {
-		var options = new GrepOptions();
+		var options = new GrepOptions { Locale = GrepLocaleProfile.ResolveCurrent() };
 		PatternMode? explicitPatternMode = null;
 		foreach ( var occurrence in parsed.Options ) {
 			var value = occurrence.Value;
@@ -773,7 +809,12 @@ public static class Command {
 					options.FileRules.Add( CreatePathRule( false, value ?? string.Empty ) );
 					break;
 				case "exclude-from": {
-					var patterns = await ReadPatternLinesAsync( value ?? string.Empty, standardInput, context.CancellationToken ).ConfigureAwait( false );
+					var patterns = await ReadPatternLinesAsync(
+						value ?? string.Empty,
+						standardInput,
+						options.Locale.PatternEncoding,
+						context.CancellationToken
+					).ConfigureAwait( false );
 					foreach ( var pattern in patterns ) {
 						options.FileRules.Add( CreatePathRule( false, pattern ) );
 					}
@@ -902,12 +943,20 @@ public static class Command {
 		var patternTexts = new List<string>();
 		foreach ( var source in options.PatternSources ) {
 			if ( source.Kind == PatternSourceKind.Expression ) {
-				patternTexts.AddRange( SplitExpressionPatterns( source.Value ) );
+				foreach ( var expression in SplitExpressionPatterns( source.Value ) ) {
+					patternTexts.Add( NormalizeArgumentPattern( expression, options.Locale ) );
+				}
 			} else {
 				try {
-					patternTexts.AddRange( await ReadPatternLinesAsync( source.Value, standardInput, context.CancellationToken ).ConfigureAwait( false ) );
+					patternTexts.AddRange( await ReadPatternLinesAsync(
+						source.Value,
+						standardInput,
+						options.Locale.PatternEncoding,
+						context.CancellationToken
+					).ConfigureAwait( false ) );
 				} catch ( Exception exception ) when (
 					exception is IOException
+						or DecoderFallbackException
 					or UnauthorizedAccessException
 					or System.Security.SecurityException
 					or ArgumentException
@@ -919,17 +968,27 @@ public static class Command {
 			}
 		}
 
-		var characterClassProvider = UnicodeRegularExpressionCharacterClassProvider.CurrentCulture;
+		var characterClassProvider = options.Locale.CharacterClassProvider;
+		var inputOptions = new RegularExpressionInputOptions {
+			DecodingMode = options.Locale.DecodingMode,
+			InvalidEncodingPolicy = InvalidEncodingPolicy.PreserveBytes
+		};
 		var patterns = new List<IGrepPattern>();
 		if ( options.PatternMode == PatternMode.Fixed ) {
 			foreach ( var patternText in patternTexts ) {
-				patterns.Add( new FixedPattern( patternText, options.IgnoreCase, characterClassProvider ) );
+				patterns.Add( new FixedPattern(
+					patternText,
+					options.IgnoreCase,
+					characterClassProvider,
+					options.Locale.DecodingMode
+				) );
 			}
 			return new PatternSet(
 				patterns,
 				options.WordRegexp,
 				options.LineRegexp,
-				characterClassProvider
+				characterClassProvider,
+				options.Locale.DecodingMode
 			);
 		}
 
@@ -961,13 +1020,14 @@ public static class Command {
 				).ConfigureAwait( false );
 				return null;
 			}
-			patterns.Add( new RegularExpressionPattern( compileResult.Expression! ) );
+			patterns.Add( new RegularExpressionPattern( compileResult.Expression!, inputOptions ) );
 		}
 		return new PatternSet(
 			patterns,
 			options.WordRegexp,
 			options.LineRegexp,
-			characterClassProvider
+			characterClassProvider,
+			options.Locale.DecodingMode
 		);
 	}
 
@@ -1270,7 +1330,13 @@ public static class Command {
 				break;
 			}
 			lineNumber++;
-			var line = new LineRecord( record.Content.ToArray(), record.IsTerminated, lineNumber, byteOffset );
+			var line = new LineRecord(
+				record.Content.ToArray(),
+				record.IsTerminated,
+				lineNumber,
+				byteOffset,
+				options.Locale.DetectEncodingErrors && ContainsInvalidEncoding( record.Content.Span )
+			);
 			byteOffset += record.Content.Length + (record.IsTerminated ? 1 : 0);
 			if ( !options.NullData && options.BinaryFileMode != BinaryFileMode.Text && record.Content.Span.Contains( (byte)0 ) ) {
 				isBinary = true;
@@ -1302,6 +1368,10 @@ public static class Command {
 					return new SourceResult( true, false, false );
 				}
 				if ( options.FileListMode == FileListMode.None && !options.CountOnly ) {
+					if ( line.HasEncodingError && options.BinaryFileMode != BinaryFileMode.Text ) {
+						afterRemaining = options.AfterContext;
+						continue;
+					}
 					if ( isBinary && options.BinaryFileMode == BinaryFileMode.Binary ) {
 						await context.Diagnostics.ErrorAsync(
 							string.Concat( source.DisplayName, ": binary file matches" ),
@@ -1427,6 +1497,18 @@ public static class Command {
 		return new SourceResult( selectedCount > 0, false, wroteRecordOutput );
 	}
 
+	private static bool ContainsInvalidEncoding( ReadOnlySpan<byte> input ) {
+		var offset = 0;
+		while ( offset < input.Length ) {
+			var status = Rune.DecodeFromUtf8( input[offset..], out _, out var consumed );
+			if ( status != System.Buffers.OperationStatus.Done ) {
+				return true;
+			}
+			offset += consumed;
+		}
+		return false;
+	}
+
 	private static void RestoreStandardInputPosition( Stream stream, long? position ) {
 		if ( position.HasValue ) {
 			stream.Seek( position.Value, SeekOrigin.Begin );
@@ -1458,6 +1540,9 @@ public static class Command {
 		long lastWrittenLine,
 		CancellationToken cancellationToken
 	) {
+		if ( record.HasEncodingError && options.BinaryFileMode != BinaryFileMode.Text ) {
+			return lastWrittenLine;
+		}
 		if (
 			options.ContextRequested
 			&& lastWrittenLine > 0
@@ -1853,6 +1938,17 @@ public static class Command {
 		return effective is "never" or "none" or "no" or "always" or "yes" or "force" or "auto" or "tty" or "if-tty";
 	}
 
+	private static string NormalizeArgumentPattern(
+		string value,
+		GrepLocaleProfile locale
+	) {
+		ArgumentNullException.ThrowIfNull( locale );
+		if ( TextDecodingMode.Bytes != locale.DecodingMode ) {
+			return value;
+		}
+		return Encoding.Latin1.GetString( Encoding.UTF8.GetBytes( value ) );
+	}
+
 	private static IEnumerable<string> SplitExpressionPatterns( string value ) {
 		var start = 0;
 		for ( var index = 0; index < value.Length; index++ ) {
@@ -1868,8 +1964,10 @@ public static class Command {
 	private static async Task<IReadOnlyList<string>> ReadPatternLinesAsync(
 		string path,
 		Stream standardInput,
+		Encoding encoding,
 		CancellationToken cancellationToken
 	) {
+		ArgumentNullException.ThrowIfNull( encoding );
 		Stream stream;
 		var dispose = false;
 		if ( path == "-" ) {
@@ -1888,7 +1986,7 @@ public static class Command {
 		try {
 			using var memory = new MemoryStream();
 			await stream.CopyToAsync( memory, cancellationToken ).ConfigureAwait( false );
-			var text = Encoding.UTF8.GetString( memory.ToArray() );
+			var text = encoding.GetString( memory.ToArray() );
 			if ( text.Length == 0 ) {
 				return Array.Empty<string>();
 			}
