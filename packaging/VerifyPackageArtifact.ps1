@@ -21,12 +21,18 @@ if (-not (Test-Path -LiteralPath $ArtifactDirectory -PathType Container)) {
 }
 
 [xml]$project = Get-Content -LiteralPath (Join-Path $repositoryRoot 'Icod.Grep.csproj') -Raw
-$packageId = $project.Project.PropertyGroup.PackageId | Where-Object { $_ } | Select-Object -First 1
-$packageVersion = $project.Project.PropertyGroup.PackageVersion | Where-Object { $_ } | Select-Object -First 1
-$targetFramework = $project.Project.PropertyGroup.TargetFramework | Where-Object { $_ } | Select-Object -First 1
-if ([string]::IsNullOrWhiteSpace($packageId) -or [string]::IsNullOrWhiteSpace($packageVersion) -or [string]::IsNullOrWhiteSpace($targetFramework)) {
-    throw 'Icod.Grep.csproj must declare PackageId, PackageVersion, and TargetFramework.'
+function Get-ProjectProperty {
+    param([Parameter(Mandatory = $true)][string]$Name)
+    $node = $project.SelectSingleNode("/Project/PropertyGroup/$Name[normalize-space(.) != '']")
+    if ($null -eq $node) {
+        throw "Icod.Grep.csproj does not declare '$Name'."
+    }
+    return $node.InnerText.Trim()
 }
+
+$packageId = Get-ProjectProperty -Name 'PackageId'
+$packageVersion = Get-ProjectProperty -Name 'PackageVersion'
+$targetFramework = Get-ProjectProperty -Name 'TargetFramework'
 if (-not [string]::IsNullOrWhiteSpace($ExpectedVersion) -and $ExpectedVersion -ne $packageVersion) {
     throw "Project package version '$packageVersion' does not match expected '$ExpectedVersion'."
 }
