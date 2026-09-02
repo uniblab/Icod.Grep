@@ -82,6 +82,10 @@ jobs:
         run: dotnet build benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c ${{ env.CONFIGURATION }} --no-restore -p:ContinuousIntegrationBuild=true
       - name: Run deterministic benchmark smoke
         run: dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c ${{ env.CONFIGURATION }} --no-build --no-restore -- --smoke
+      - name: Validate pinned 1.5.0 comparison orchestration
+        if: matrix.name == 'Windows'
+        shell: pwsh
+        run: ./benchmarks/Collect-ReferenceComparison.ps1 -Smoke -OutputDirectory artifacts/performance/orchestration-smoke
 
   package-smoke:
     needs: validate
