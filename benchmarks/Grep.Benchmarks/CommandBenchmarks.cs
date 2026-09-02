@@ -6,7 +6,7 @@ using Icod.Grep;
 
 /// <summary>Measures the command pipeline without process-startup noise.</summary>
 [MemoryDiagnoser]
-public sealed class CommandBenchmarks {
+public class CommandBenchmarks {
 	private CommandContext? context;
 	private StringWriter? error;
 	private MemoryStream? input;
