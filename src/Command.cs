@@ -14,7 +14,7 @@ using Icod.CommandFramework.RegularExpressions;
 
 /// <summary>Implements GNU-compatible pattern searching over byte-preserving input records.</summary>
 public static class Command {
-	private const string VersionText = "grep (Icod.Grep) 1.0";
+	private const string VersionText = "grep (Icod.Grep) 1.1.0";
 	private const int BinaryProbeLength = 98_304;
 	private static readonly byte[] MatchColorStart = "\u001b[01;31m\u001b[K"u8.ToArray();
 	private static readonly byte[] MatchColorEnd = "\u001b[m\u001b[K"u8.ToArray();
@@ -92,6 +92,7 @@ public static class Command {
 		public BinaryFileMode BinaryFileMode { get; set; } = BinaryFileMode.Binary;
 		public DirectoryMode DirectoryMode { get; set; } = DirectoryMode.Read;
 		public DeviceMode DeviceMode { get; set; } = DeviceMode.Read;
+		public bool DeviceModeExplicit { get; set; }
 		public SymbolicLinkTraversalMode SymbolicLinkMode { get; set; } = SymbolicLinkTraversalMode.RootsOnly;
 		public FileListMode FileListMode { get; set; }
 		public bool CountOnly { get; set; }
@@ -551,7 +552,9 @@ public static class Command {
 	private static OptionParser CreateParser() {
 		var settings = new OptionParserSettings {
 			AllowLongOptionAbbreviations = true,
-			Ordering = OptionOrdering.Permute
+			Ordering = Environment.GetEnvironmentVariable( "POSIXLY_CORRECT" ) is null
+				? OptionOrdering.Permute
+				: OptionOrdering.RequireOrder
 		};
 		settings.TokenRewriteRules.Add(
 			new OptionTokenRewriteRule(
@@ -751,6 +754,7 @@ public static class Command {
 						return (null, "invalid device policy");
 					}
 					options.DeviceMode = deviceMode;
+					options.DeviceModeExplicit = true;
 					break;
 				case "recursive":
 					options.DirectoryMode = DirectoryMode.Recurse;
@@ -850,9 +854,14 @@ public static class Command {
 		for ( ; operandIndex < parsed.Operands.Count; operandIndex++ ) {
 			options.Operands.Add( parsed.Operands[operandIndex] );
 		}
-		if ( options.OnlyMatching ) {
+		if ( options.OnlyMatching && options.ContextRequested ) {
+			await context.Diagnostics.WarningAsync(
+				"context options have no effect with --only-matching",
+				context.CancellationToken
+			).ConfigureAwait( false );
 			options.BeforeContext = 0;
 			options.AfterContext = 0;
+			options.ContextRequested = false;
 		}
 		options.ColorEnabled = options.ColorMode == ColorMode.Always
 			|| (
@@ -1082,7 +1091,7 @@ public static class Command {
 					if ( item.Entry is null || item.Entry.Kind == FileSystemEntryKind.Directory ) {
 						break;
 					}
-					if ( options.DeviceMode == DeviceMode.Skip && item.Entry.Kind == FileSystemEntryKind.Other ) {
+					if ( item.Entry.Kind == FileSystemEntryKind.Other && ShouldSkipRecursiveDevice( options ) ) {
 						break;
 					}
 					try {
@@ -1668,6 +1677,13 @@ public static class Command {
 			}
 		}
 		return false;
+	}
+
+	private static bool ShouldSkipRecursiveDevice( GrepOptions options ) {
+		if ( options.DeviceModeExplicit ) {
+			return options.DeviceMode == DeviceMode.Skip;
+		}
+		return options.SymbolicLinkMode != SymbolicLinkTraversalMode.Always;
 	}
 
 	private static async ValueTask<bool> ShouldSkipDeviceAsync(
