@@ -21,7 +21,7 @@ grep [OPTION]... PATTERNS [FILE]...
 
 The implementation is byte-preserving where GNU behavior requires it and supports GNU Basic Regular Expressions, GNU Extended Regular Expressions, fixed-string matching, recursive directory traversal, pathname include/exclude rules, binary-file policies, byte offsets, record numbers, context output, only-matching output, file-list modes, color output, NUL-delimited records, and conventional GNU grep exit-status semantics.
 
-Neutral infrastructure comes from `Icod.CommandFramework`, including command-line parsing, diagnostics, byte-stream helpers, record readers, read-only filesystem traversal, pathname patterns, and GNU-compatible regular-expression contracts. `Icod.Grep` has no dependency on `Icod.CoreUtils.Shared`.
+Neutral infrastructure comes from `Icod.CommandFramework`, including command-line parsing, diagnostics, byte-stream helpers, record readers, read-only filesystem traversal, pathname patterns, and GNU-compatible regular-expression contracts. `Icod.Grep` has no dependency on `Icod.CoreUtils.Shared`. GNU color/terminal integration is routed through `Icod.DCurses 0.1.0`; its terminal stack provides cross-platform terminal attachment detection while grep preserves GNU `GREP_COLORS` SGR semantics.
 
 Perl-compatible regular expressions (`-P`) are recognized but are not currently available in this managed build; requesting them produces a controlled diagnostic.
 
@@ -32,7 +32,7 @@ The current GNU grep 3.12 feature-completeness assessment and remaining compatib
 Install the .NET tool from NuGet.org:
 
 ```text
-dotnet tool install --global Icod.Grep --version 1.1.0
+dotnet tool install --global Icod.Grep --version 1.2.0
 ```
 
 The package installs a single command named `grep`.

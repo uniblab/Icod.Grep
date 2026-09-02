@@ -3,7 +3,7 @@
 **Audit baseline:** `main` at `996861022cf1d28e3a6977df6e900df98fd7ff98`  
 **Target:** GNU grep 3.12 command behavior  
 **Audit release:** `1.0.1`  
-**Current parity release:** `1.1.0` — T2 command semantics closes G04, G05, and G06
+**Current parity release:** `1.2.0` — T3 color completeness closes G03; T2 closed G04, G05, and G06
 
 ## Executive summary
 
@@ -13,7 +13,7 @@ The repository is **not yet feature-complete against GNU grep 3.12**. The remain
 
 1. Perl-compatible regular expressions (`-P`) are recognized but unavailable.
 2. GNU locale/environment selection is not wired into matching and pattern decoding.
-3. GNU color behavior is only partially implemented.
+3. ✅ GNU color behavior is complete for the GNU grep 3.12 `GREP_COLORS` / terminal-environment contract in `1.2.0`.
 4. ✅ `POSIXLY_CORRECT` option-order behavior is implemented in `1.1.0`.
 5. ✅ Default device handling under `-r` is aligned with GNU grep in `1.1.0`.
 6. ✅ `-o` combined with context options follows GNU's warning/no-effect contract in `1.1.0`.
@@ -227,9 +227,9 @@ Address G02 and G07 together. They share the same locale-selection and decoding 
 
 G04, G05, and G06 are closed with targeted regression tests.
 
-### T3 — Color completeness
+### T3 — Color completeness — complete in `1.2.0`
 
-Address G03 after terminal capability policy is settled. If `Icod.TermInfo` is the intended shared terminal-capability authority, use it rather than creating a grep-local terminal database layer.
+G03 is closed. `Icod.DCurses 0.1.0` supplies the canonical terminal stack; grep uses terminal endpoint observation for `--color=auto` while retaining GNU SGR strings as the command-owned `GREP_COLORS` policy.
 
 ### T4 — PCRE decision
 

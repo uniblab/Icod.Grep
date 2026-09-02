@@ -11,13 +11,14 @@ using Icod.CommandFramework.FileSystem.Traversal;
 using Icod.CommandFramework.IO;
 using Icod.CommandFramework.Records;
 using Icod.CommandFramework.RegularExpressions;
+using Icod.Terminal;
 
 /// <summary>Implements GNU-compatible pattern searching over byte-preserving input records.</summary>
 public static class Command {
-	private const string VersionText = "grep (Icod.Grep) 1.1.0";
+	private const string VersionText = "grep (Icod.Grep) 1.2.0";
 	private const int BinaryProbeLength = 98_304;
-	private static readonly byte[] MatchColorStart = "\u001b[01;31m\u001b[K"u8.ToArray();
-	private static readonly byte[] MatchColorEnd = "\u001b[m\u001b[K"u8.ToArray();
+	private static readonly byte[] ColorReset = "\u001b[m"u8.ToArray();
+	private static readonly byte[] EraseLine = "\u001b[K"u8.ToArray();
 
 	private enum PatternMode {
 		Basic,
@@ -109,6 +110,7 @@ public static class Command {
 		public List<PathnamePattern> ExcludeDirectoryPatterns { get; } = new();
 		public bool Recursive => DirectoryMode == DirectoryMode.Recurse;
 		public bool ColorEnabled { get; set; }
+		public GrepColorProfile ColorProfile { get; set; } = GrepColorProfile.Default;
 	}
 
 	private sealed class PrefixReadStream : Stream {
@@ -863,12 +865,32 @@ public static class Command {
 			options.AfterContext = 0;
 			options.ContextRequested = false;
 		}
+		var stdoutIsTerminal = false;
+		if ( options.ColorMode == ColorMode.Auto && ReferenceEquals( context.StandardOutput, Console.Out ) ) {
+			var observation = SystemTerminalControlProvider.Instance.Observe( TerminalEndpoint.StandardOutput );
+			stdoutIsTerminal = observation.IsAvailable && observation.Value!.IsTerminal;
+		}
 		options.ColorEnabled = options.ColorMode == ColorMode.Always
 			|| (
 				options.ColorMode == ColorMode.Auto
-				&& ReferenceEquals( context.StandardOutput, Console.Out )
-				&& !Console.IsOutputRedirected
+				&& GrepColorProfile.ShouldEnableAutoColor(
+					stdoutIsTerminal,
+					Environment.GetEnvironmentVariable( "TERM" )
+				)
 			);
+		if ( options.ColorEnabled ) {
+			options.ColorProfile = GrepColorProfile.Resolve(
+				Environment.GetEnvironmentVariable( "GREP_COLORS" ),
+				Environment.GetEnvironmentVariable( "GREP_COLOR" ),
+				out var colorWarning
+			);
+			if ( colorWarning is not null ) {
+				await context.Diagnostics.WarningAsync(
+					colorWarning,
+					context.CancellationToken
+				).ConfigureAwait( false );
+			}
+		}
 		return (options, null);
 	}
 
@@ -1420,11 +1442,8 @@ public static class Command {
 		if ( !separateBeforeRecordOutput || !options.ContextRequested || options.GroupSeparator is null ) {
 			return;
 		}
-		await output.WriteTextAsync( options.GroupSeparator, cancellationToken ).ConfigureAwait( false );
-		await output.WriteAsync(
-			new[] { options.NullData ? (byte)0 : (byte)'\n' },
-			cancellationToken
-		).ConfigureAwait( false );
+		await WriteStyledTextAsync( options.GroupSeparator, options.ColorProfile.Separator, options, output, cancellationToken ).ConfigureAwait( false );
+		await output.WriteAsync( new[] { options.NullData ? (byte)0 : (byte)'\n' }, cancellationToken ).ConfigureAwait( false );
 	}
 
 	private static async Task<long> WriteContextAwareRecordAsync(
@@ -1445,29 +1464,29 @@ public static class Command {
 			&& record.LineNumber > lastWrittenLine + 1
 			&& options.GroupSeparator is not null
 		) {
-			await output.WriteTextAsync( options.GroupSeparator, cancellationToken ).ConfigureAwait( false );
+			await WriteStyledTextAsync( options.GroupSeparator, options.ColorProfile.Separator, options, output, cancellationToken ).ConfigureAwait( false );
 			await output.WriteAsync( new[] { options.NullData ? (byte)0 : (byte)'\n' }, cancellationToken ).ConfigureAwait( false );
 		}
 		await WritePrefixAsync(
-			source.DisplayName,
-			record.LineNumber,
-			record.ByteOffset,
-			selected,
-			showFilename,
-			prefixFieldWidth,
-			options,
-			output,
-			cancellationToken
+			source.DisplayName, record.LineNumber, record.ByteOffset, selected,
+			showFilename, prefixFieldWidth, options, output, cancellationToken
 		).ConfigureAwait( false );
-		if ( selected && options.ColorEnabled && !options.InvertMatch ) {
-			await WriteColoredRecordContentAsync( record.Content, patterns, output, cancellationToken ).ConfigureAwait( false );
+
+		var lineStyle = options.ColorProfile.GetLineStyle( selected, options.InvertMatch );
+		var lineActive = await WriteColorStartAsync( lineStyle, options, output, cancellationToken ).ConfigureAwait( false );
+		var mayHighlightMatches = options.InvertMatch ? !selected : selected;
+		if ( options.ColorEnabled && mayHighlightMatches ) {
+			lineActive = await WriteColoredRecordContentAsync(
+				record.Content, patterns, options.ColorProfile.GetMatchStyle( options.InvertMatch ),
+				lineStyle, lineActive, options, output, cancellationToken
+			).ConfigureAwait( false );
 		} else {
 			await output.WriteAsync( record.Content, cancellationToken ).ConfigureAwait( false );
 		}
-		await output.WriteAsync(
-			new[] { options.NullData ? (byte)0 : (byte)'\n' },
-			cancellationToken
-		).ConfigureAwait( false );
+		if ( lineActive ) {
+			await WriteColorEndAsync( null, options, output, cancellationToken ).ConfigureAwait( false );
+		}
+		await output.WriteAsync( new[] { options.NullData ? (byte)0 : (byte)'\n' }, cancellationToken ).ConfigureAwait( false );
 		if ( options.LineBuffered ) {
 			await output.FlushAsync( cancellationToken ).ConfigureAwait( false );
 		}
@@ -1485,22 +1504,13 @@ public static class Command {
 		CancellationToken cancellationToken
 	) {
 		await WritePrefixAsync(
-			source.DisplayName,
-			record.LineNumber,
-			record.ByteOffset + span.Index,
-			true,
-			showFilename,
-			prefixFieldWidth,
-			options,
-			output,
-			cancellationToken
+			source.DisplayName, record.LineNumber, record.ByteOffset + span.Index,
+			true, showFilename, prefixFieldWidth, options, output, cancellationToken
 		).ConfigureAwait( false );
-		if ( options.ColorEnabled ) {
-			await output.WriteAsync( MatchColorStart, cancellationToken ).ConfigureAwait( false );
-		}
+		var active = await WriteColorStartAsync( options.ColorProfile.SelectedMatch, options, output, cancellationToken ).ConfigureAwait( false );
 		await output.WriteAsync( record.Content.AsMemory( span.Index, span.Length ), cancellationToken ).ConfigureAwait( false );
-		if ( options.ColorEnabled ) {
-			await output.WriteAsync( MatchColorEnd, cancellationToken ).ConfigureAwait( false );
+		if ( active ) {
+			await WriteColorEndAsync( null, options, output, cancellationToken ).ConfigureAwait( false );
 		}
 		await output.WriteAsync( new[] { options.NullData ? (byte)0 : (byte)'\n' }, cancellationToken ).ConfigureAwait( false );
 		if ( options.LineBuffered ) {
@@ -1508,9 +1518,13 @@ public static class Command {
 		}
 	}
 
-	private static async Task WriteColoredRecordContentAsync(
+	private static async Task<bool> WriteColoredRecordContentAsync(
 		byte[] content,
 		PatternSet patterns,
+		string matchStyle,
+		string lineStyle,
+		bool lineActive,
+		GrepOptions options,
 		ByteOutputStream output,
 		CancellationToken cancellationToken
 	) {
@@ -1520,14 +1534,19 @@ public static class Command {
 			if ( span.Index > position ) {
 				await output.WriteAsync( content.AsMemory( position, span.Index - position ), cancellationToken ).ConfigureAwait( false );
 			}
-			await output.WriteAsync( MatchColorStart, cancellationToken ).ConfigureAwait( false );
+			var matchActive = await WriteColorStartAsync( matchStyle, options, output, cancellationToken ).ConfigureAwait( false );
 			await output.WriteAsync( content.AsMemory( span.Index, span.Length ), cancellationToken ).ConfigureAwait( false );
-			await output.WriteAsync( MatchColorEnd, cancellationToken ).ConfigureAwait( false );
 			position = span.Index + span.Length;
+			if ( matchActive ) {
+				var restore = position < content.Length ? lineStyle : null;
+				await WriteColorEndAsync( restore, options, output, cancellationToken ).ConfigureAwait( false );
+				lineActive = !string.IsNullOrEmpty( restore );
+			}
 		}
 		if ( position < content.Length ) {
 			await output.WriteAsync( content.AsMemory( position ), cancellationToken ).ConfigureAwait( false );
 		}
+		return lineActive;
 	}
 
 	private static async Task WritePrefixAsync(
@@ -1544,28 +1563,22 @@ public static class Command {
 		var separator = selected ? (byte)':' : (byte)'-';
 		var hasPrefix = false;
 		if ( showFilename ) {
-			await output.WriteTextAsync( displayName, cancellationToken ).ConfigureAwait( false );
-			await output.WriteAsync( new[] { options.NullFilename ? (byte)0 : separator }, cancellationToken ).ConfigureAwait( false );
+			await WriteStyledTextAsync( displayName, options.ColorProfile.FileName, options, output, cancellationToken ).ConfigureAwait( false );
+			if ( options.NullFilename ) {
+				await output.WriteAsync( new[] { (byte)0 }, cancellationToken ).ConfigureAwait( false );
+			} else {
+				await WriteStyledByteAsync( separator, options.ColorProfile.Separator, options, output, cancellationToken ).ConfigureAwait( false );
+			}
 			hasPrefix = true;
 		}
 		if ( options.LineNumber ) {
-			await WriteAlignedNumberAsync(
-				lineNumber,
-				prefixFieldWidth,
-				output,
-				cancellationToken
-			).ConfigureAwait( false );
-			await output.WriteAsync( new[] { separator }, cancellationToken ).ConfigureAwait( false );
+			await WriteStyledTextAsync( FormatAlignedNumber( lineNumber, prefixFieldWidth ), options.ColorProfile.LineNumber, options, output, cancellationToken ).ConfigureAwait( false );
+			await WriteStyledByteAsync( separator, options.ColorProfile.Separator, options, output, cancellationToken ).ConfigureAwait( false );
 			hasPrefix = true;
 		}
 		if ( options.ByteOffset ) {
-			await WriteAlignedNumberAsync(
-				byteOffset,
-				prefixFieldWidth,
-				output,
-				cancellationToken
-			).ConfigureAwait( false );
-			await output.WriteAsync( new[] { separator }, cancellationToken ).ConfigureAwait( false );
+			await WriteStyledTextAsync( FormatAlignedNumber( byteOffset, prefixFieldWidth ), options.ColorProfile.ByteOffset, options, output, cancellationToken ).ConfigureAwait( false );
+			await WriteStyledByteAsync( separator, options.ColorProfile.Separator, options, output, cancellationToken ).ConfigureAwait( false );
 			hasPrefix = true;
 		}
 		if ( options.InitialTab && hasPrefix ) {
@@ -1581,23 +1594,14 @@ public static class Command {
 			try {
 				return Math.Max( 1L, stream.Length ).ToString( CultureInfo.InvariantCulture ).Length;
 			} catch ( NotSupportedException ) {
-				// Fall through to the widest possible signed stream offset.
 			}
 		}
 		return long.MaxValue.ToString( CultureInfo.InvariantCulture ).Length;
 	}
 
-	private static async Task WriteAlignedNumberAsync(
-		long value,
-		int width,
-		ByteOutputStream output,
-		CancellationToken cancellationToken
-	) {
+	private static string FormatAlignedNumber( long value, int width ) {
 		var text = value.ToString( CultureInfo.InvariantCulture );
-		if ( width > text.Length ) {
-			await output.WriteTextAsync( new string( ' ', width - text.Length ), cancellationToken ).ConfigureAwait( false );
-		}
-		await output.WriteTextAsync( text, cancellationToken ).ConfigureAwait( false );
+		return width > text.Length ? string.Concat( new string( ' ', width - text.Length ), text ) : text;
 	}
 
 	private static async Task WriteFileNameOnlyAsync(
@@ -1606,7 +1610,7 @@ public static class Command {
 		ByteOutputStream output,
 		CancellationToken cancellationToken
 	) {
-		await output.WriteTextAsync( displayName, cancellationToken ).ConfigureAwait( false );
+		await WriteStyledTextAsync( displayName, options.ColorProfile.FileName, options, output, cancellationToken ).ConfigureAwait( false );
 		await output.WriteAsync( new[] { options.NullFilename ? (byte)0 : (byte)'\n' }, cancellationToken ).ConfigureAwait( false );
 		if ( options.LineBuffered ) {
 			await output.FlushAsync( cancellationToken ).ConfigureAwait( false );
@@ -1622,13 +1626,76 @@ public static class Command {
 		CancellationToken cancellationToken
 	) {
 		if ( showFilename ) {
-			await output.WriteTextAsync( displayName, cancellationToken ).ConfigureAwait( false );
-			await output.WriteAsync( new[] { options.NullFilename ? (byte)0 : (byte)':' }, cancellationToken ).ConfigureAwait( false );
+			await WriteStyledTextAsync( displayName, options.ColorProfile.FileName, options, output, cancellationToken ).ConfigureAwait( false );
+			if ( options.NullFilename ) {
+				await output.WriteAsync( new[] { (byte)0 }, cancellationToken ).ConfigureAwait( false );
+			} else {
+				await WriteStyledByteAsync( (byte)':', options.ColorProfile.Separator, options, output, cancellationToken ).ConfigureAwait( false );
+			}
 		}
 		await output.WriteTextAsync( count.ToString( CultureInfo.InvariantCulture ), cancellationToken ).ConfigureAwait( false );
 		await output.WriteAsync( new[] { (byte)'\n' }, cancellationToken ).ConfigureAwait( false );
 		if ( options.LineBuffered ) {
 			await output.FlushAsync( cancellationToken ).ConfigureAwait( false );
+		}
+	}
+
+	private static async ValueTask<bool> WriteColorStartAsync(
+		string? sgr,
+		GrepOptions options,
+		ByteOutputStream output,
+		CancellationToken cancellationToken
+	) {
+		if ( !options.ColorEnabled || string.IsNullOrEmpty( sgr ) ) {
+			return false;
+		}
+		await output.WriteTextAsync( string.Concat( "\u001b[", sgr, "m" ), cancellationToken ).ConfigureAwait( false );
+		if ( !options.ColorProfile.NoErase ) {
+			await output.WriteAsync( EraseLine, cancellationToken ).ConfigureAwait( false );
+		}
+		return true;
+	}
+
+	private static async ValueTask WriteColorEndAsync(
+		string? restoreSgr,
+		GrepOptions options,
+		ByteOutputStream output,
+		CancellationToken cancellationToken
+	) {
+		await output.WriteAsync( ColorReset, cancellationToken ).ConfigureAwait( false );
+		if ( !options.ColorProfile.NoErase ) {
+			await output.WriteAsync( EraseLine, cancellationToken ).ConfigureAwait( false );
+		}
+		if ( !string.IsNullOrEmpty( restoreSgr ) ) {
+			await WriteColorStartAsync( restoreSgr, options, output, cancellationToken ).ConfigureAwait( false );
+		}
+	}
+
+	private static async ValueTask WriteStyledTextAsync(
+		string text,
+		string sgr,
+		GrepOptions options,
+		ByteOutputStream output,
+		CancellationToken cancellationToken
+	) {
+		var active = await WriteColorStartAsync( sgr, options, output, cancellationToken ).ConfigureAwait( false );
+		await output.WriteTextAsync( text, cancellationToken ).ConfigureAwait( false );
+		if ( active ) {
+			await WriteColorEndAsync( null, options, output, cancellationToken ).ConfigureAwait( false );
+		}
+	}
+
+	private static async ValueTask WriteStyledByteAsync(
+		byte value,
+		string sgr,
+		GrepOptions options,
+		ByteOutputStream output,
+		CancellationToken cancellationToken
+	) {
+		var active = await WriteColorStartAsync( sgr, options, output, cancellationToken ).ConfigureAwait( false );
+		await output.WriteAsync( new[] { value }, cancellationToken ).ConfigureAwait( false );
+		if ( active ) {
+			await WriteColorEndAsync( null, options, output, cancellationToken ).ConfigureAwait( false );
 		}
 	}
 
@@ -1886,7 +1953,7 @@ Output control:
   -l, --files-with-matches    print only names of FILEs with selected records
   -L, --files-without-match   print only names of FILEs without selected records
   -Z, --null                  print NUL after file names
-      --color[=WHEN]          surround matches with terminal color when WHEN is always
+      --color[=WHEN]          use GREP_COLORS when WHEN is always or auto on a terminal
 
 File and directory selection:
   -a, --text                  process binary data as text
