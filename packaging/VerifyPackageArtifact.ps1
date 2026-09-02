@@ -57,7 +57,8 @@ try {
         "tools/$targetFramework/any/grep.dll",
         "tools/$targetFramework/any/grep.runtimeconfig.json",
         'README.md',
-        'LICENSE'
+        'LICENSE',
+        'icon.png'
     )) {
         if ($required -notin $entries) {
             throw "Package '$($package.Name)' is missing '$required'."
