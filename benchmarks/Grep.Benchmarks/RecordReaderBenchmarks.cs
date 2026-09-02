@@ -12,13 +12,24 @@ public sealed class RecordReaderBenchmarks {
 	[Params( 80, 4096, 262144 )]
 	public int RecordLength { get; set; }
 
-	/// <summary>Generates a stable record corpus.</summary>
+	/// <summary>Generates a stable corpus whose total size remains representative across record lengths.</summary>
 	[GlobalSetup]
 	public void Setup() {
+		var recordCount = this.RecordLength switch {
+			80 => 16384,
+			4096 => 2048,
+			262144 => 32,
+			_ => throw new InvalidOperationException(
+				string.Concat(
+					"Unexpected record length: ",
+					this.RecordLength.ToString( System.Globalization.CultureInfo.InvariantCulture )
+				)
+			)
+		};
 		var scenario = new BenchmarkScenario(
 			"record-reader",
 			"basic",
-			256,
+			recordCount,
 			this.RecordLength,
 			int.MaxValue,
 			1,
