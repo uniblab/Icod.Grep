@@ -35,7 +35,13 @@ internal static class PlatformIoContext {
 
 	private static bool HasBinaryPlatformOption( IReadOnlyList<string> args ) {
 		var parsingOptions = true;
+		var consumeNextValue = false;
+		var requireOrder = Environment.GetEnvironmentVariable( "POSIXLY_CORRECT" ) is not null;
 		foreach ( var argument in args ) {
+			if ( consumeNextValue ) {
+				consumeNextValue = false;
+				continue;
+			}
 			if ( !parsingOptions ) {
 				continue;
 			}
@@ -43,10 +49,19 @@ internal static class PlatformIoContext {
 				parsingOptions = false;
 				continue;
 			}
-			if ( "--binary" == argument ) {
-				return true;
+			if ( argument.Length < 2 || '-' != argument[0] ) {
+				if ( requireOrder ) {
+					parsingOptions = false;
+				}
+				continue;
 			}
-			if ( argument.Length < 2 || '-' != argument[0] || '-' == argument[1] ) {
+			if ( '-' == argument[1] ) {
+				if ( "--binary" == argument ) {
+					return true;
+				}
+				if ( IsRequiredLongOptionWithoutAttachedValue( argument ) ) {
+					consumeNextValue = true;
+				}
 				continue;
 			}
 			for ( var index = 1; index < argument.Length; index++ ) {
@@ -54,13 +69,41 @@ internal static class PlatformIoContext {
 				if ( 'U' == option ) {
 					return true;
 				}
-				if ( option is 'e' or 'f' or 'm' or 'd' or 'D' or 'B' or 'A' or 'C' ) {
+				if ( IsRequiredShortOption( option ) ) {
+					if ( index == argument.Length - 1 ) {
+						consumeNextValue = true;
+					}
 					break;
 				}
 			}
 		}
 		return false;
 	}
+
+	private static bool IsRequiredLongOptionWithoutAttachedValue( string argument ) {
+		if ( argument.Contains( '=', StringComparison.Ordinal ) ) {
+			return false;
+		}
+		return argument is
+			"--regexp"
+			or "--file"
+			or "--max-count"
+			or "--label"
+			or "--binary-files"
+			or "--directories"
+			or "--devices"
+			or "--include"
+			or "--exclude"
+			or "--exclude-from"
+			or "--exclude-dir"
+			or "--before-context"
+			or "--after-context"
+			or "--context"
+			or "--group-separator";
+	}
+
+	private static bool IsRequiredShortOption( char option ) => option is
+		'e' or 'f' or 'm' or 'd' or 'D' or 'B' or 'A' or 'C';
 
 	private sealed class RestoreScope( bool previous ) : IDisposable {
 		private bool disposed;
@@ -273,6 +316,10 @@ internal sealed class WindowsTextInputStream : Stream {
 	private void Translate( ReadOnlySpan<byte> input ) {
 		foreach ( var value in input ) {
 			if ( 0x1A == value ) {
+				if ( this.pendingCarriageReturn ) {
+					this.pendingCarriageReturn = false;
+					this.translatedBuffer[this.translatedCount++] = (byte)'\r';
+				}
 				this.endOfInput = true;
 				break;
 			}
