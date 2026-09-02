@@ -17,7 +17,7 @@ using PCRE;
 
 /// <summary>Implements GNU-compatible pattern searching over byte-preserving input records.</summary>
 public static class Command {
-	private const string VersionText = "grep (Icod.Grep) 1.4.0";
+	private const string VersionText = "grep (Icod.Grep) 1.5.0";
 	private const int BinaryProbeLength = 98_304;
 	private static readonly byte[] ColorReset = "\u001b[m"u8.ToArray();
 	private static readonly byte[] EraseLine = "\u001b[K"u8.ToArray();
@@ -561,6 +561,7 @@ public static class Command {
 				).ConfigureAwait( false );
 				return CommandExitCodes.UsageError;
 			}
+			PlatformIoContext.ApplyParsedBinaryPlatformMode( parsed.HasOption( "binary-platform" ) );
 			if ( parsed.HasOption( "help" ) ) {
 				await WriteHelpAsync( context ).ConfigureAwait( false );
 				return CommandExitCodes.Success;

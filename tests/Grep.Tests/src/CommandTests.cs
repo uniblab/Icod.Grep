@@ -544,7 +544,7 @@ public sealed class CommandTests {
 		Assert.Equal( CommandExitCodes.Success, help.Status );
 		Assert.Contains( "Usage: grep", help.TextOutput );
 		Assert.Equal( CommandExitCodes.Success, version.Status );
-		Assert.Contains( "grep (Icod.Grep) 1.4.0", version.TextOutput );
+		Assert.Contains( "grep (Icod.Grep) 1.5.0", version.TextOutput );
 	}
 
 	/// <summary>Verifies cancellation returns the shared canceled status.</summary>

@@ -93,13 +93,34 @@ jobs:
           dotnet tool install Icod.Grep --tool-path $toolPath --add-source $source --version $version --ignore-failed-sources
           if (0 -ne $LASTEXITCODE) { throw 'Packed-tool installation failed.' }
           $grep = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { Join-Path $toolPath 'grep.exe' } else { Join-Path $toolPath 'grep' }
-          & $grep --version
+          $versionOutput = (& $grep --version)
           if (0 -ne $LASTEXITCODE) { throw 'Packed grep --version failed.' }
+          if ($versionOutput.Trim() -ne "grep (Icod.Grep) $version") {
+              throw "Packed grep version output '$versionOutput' does not match package version '$version'."
+          }
+          Write-Host $versionOutput
           [System.IO.File]::WriteAllText('sample.txt', "alpha`nfoobar`ngamma`n", [System.Text.UTF8Encoding]::new($false))
           & $grep -n foobar sample.txt
           if (0 -ne $LASTEXITCODE) { throw 'Packed grep functional smoke failed.' }
           & $grep -P '(?<=foo)bar' sample.txt
           if (0 -ne $LASTEXITCODE) { throw 'Packed grep PCRE smoke failed.' }
+
+          if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+              [System.IO.File]::WriteAllBytes(
+                  'crlf.txt',
+                  [System.Text.Encoding]::ASCII.GetBytes("alpha`r`nbeta`r`n")
+              )
+              & $grep -x alpha crlf.txt
+              if (0 -ne $LASTEXITCODE) {
+                  throw 'Packed grep Windows default text-mode CRLF smoke failed.'
+              }
+              & $grep -U -x alpha crlf.txt
+              $binaryStatus = $LASTEXITCODE
+              if (1 -ne $binaryStatus) {
+                  throw "Packed grep Windows -U CRLF smoke returned $binaryStatus; expected 1."
+              }
+              $global:LASTEXITCODE = 0
+          }
 
   archive-smoke:
     needs: validate
