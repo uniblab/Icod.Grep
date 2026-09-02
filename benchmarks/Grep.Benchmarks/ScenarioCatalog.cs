@@ -24,7 +24,7 @@ internal static class ScenarioCatalog {
 	}
 
 	private static IReadOnlyList<BenchmarkScenario> LoadScenarios() {
-		var path = Path.Combine(
+		var path = System.IO.Path.Combine(
 			AppContext.BaseDirectory,
 			"scenarios.json"
 		);
