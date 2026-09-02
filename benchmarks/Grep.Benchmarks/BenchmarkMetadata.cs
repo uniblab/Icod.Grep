@@ -43,7 +43,7 @@ internal static class BenchmarkMetadata {
 			HardwareInventory = null == inventoryPath
 				? null
 				: new {
-					Path = Path.GetFileName( inventoryPath ),
+					Path = System.IO.Path.GetFileName( inventoryPath ),
 					Sha256 = Convert.ToHexString(
 						SHA256.HashData(
 							File.ReadAllBytes( inventoryPath )
@@ -51,8 +51,8 @@ internal static class BenchmarkMetadata {
 					).ToLowerInvariant()
 				}
 		};
-		var directory = Path.GetDirectoryName(
-			Path.GetFullPath( path )
+		var directory = System.IO.Path.GetDirectoryName(
+			System.IO.Path.GetFullPath( path )
 		);
 		if ( !string.IsNullOrEmpty( directory ) ) {
 			Directory.CreateDirectory( directory );
@@ -76,14 +76,14 @@ internal static class BenchmarkMetadata {
 			!string.IsNullOrWhiteSpace( configured )
 			&& File.Exists( configured )
 		) {
-			return Path.GetFullPath( configured );
+			return System.IO.Path.GetFullPath( configured );
 		}
 
 		var directory = new DirectoryInfo(
 			Directory.GetCurrentDirectory()
 		);
 		while ( null != directory ) {
-			var candidate = Path.Combine(
+			var candidate = System.IO.Path.Combine(
 				directory.FullName,
 				"hardware_inventory.txt"
 			);
