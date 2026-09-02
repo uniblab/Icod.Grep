@@ -15,11 +15,11 @@ grep [OPTION]... PATTERNS [FILE]...
 
 ## DESCRIPTION
 
-`Icod.Grep` is a managed .NET implementation of GNU `grep(1)`, currently modeled on GNU grep 3.12.
+`Icod.Grep` is a cross-platform .NET implementation of GNU `grep(1)`, currently modeled on GNU grep 3.12.
 
 `grep` searches each FILE, or standard input when no FILE is supplied, for records that match one or more patterns. Selected records are written to standard output unless an output-suppressing or summary option is in effect.
 
-The implementation is byte-preserving where GNU behavior requires it and supports GNU Basic Regular Expressions, GNU Extended Regular Expressions, fixed-string matching, recursive directory traversal, pathname include/exclude rules, binary-file policies, byte offsets, record numbers, context output, only-matching output, file-list modes, color output, NUL-delimited records, and conventional GNU grep exit-status semantics.
+The implementation is byte-preserving where GNU behavior requires it and supports GNU Basic Regular Expressions, GNU Extended Regular Expressions, fixed-string matching, Perl-compatible regular expressions, recursive directory traversal, pathname include/exclude rules, binary-file policies, byte offsets, record numbers, context output, only-matching output, file-list modes, color output, NUL-delimited records, and conventional GNU grep exit-status semantics.
 
 Neutral infrastructure comes from `Icod.CommandFramework`, including command-line parsing, diagnostics, byte-stream helpers, record readers, read-only filesystem traversal, pathname patterns, and GNU-compatible regular-expression contracts. `Icod.Grep` has no dependency on `Icod.CoreUtils.Shared`. GNU color/terminal integration is routed through `Icod.DCurses 0.1.0`; its terminal stack provides cross-platform terminal attachment detection while grep preserves GNU `GREP_COLORS` SGR semantics.
 
@@ -37,19 +37,19 @@ dotnet tool install --global Icod.Grep --version 1.4.0
 
 The package installs a single command named `grep`.
 
-Runtime-specific ZIP distributions are also published for Windows, Linux, and macOS on x64 and ARM64. The ZIP archives contain `grep` (or `grep.exe` on Windows), `README.md`, and `LICENSE`, and require the .NET 10 runtime.
+Runtime-specific ZIP distributions are also published for Windows, Linux, and macOS on x64 and ARM64. The ZIP archives contain `grep` (or `grep.exe` on Windows), `README.md`, `LICENSE`, and `THIRD-PARTY-NOTICES.md`, and require the .NET 10 runtime.
 
 ## DEVELOPMENT AND RELEASE
 
 The repository follows the canonical Icod build lifecycle:
 
 - local `build.cmd` / `build.sh` runs the `Debug` cycle;
-- pull requests validate `Staging` on Windows, Linux, and macOS;
+- pull requests validate `Staging` on Windows, Linux, and macOS, install and exercise the exact packed tool on all three host families, and build/smoke all six supported RID archives;
 - pushes to `main` run validation-only `Release` across Windows, Linux, and macOS on x64 and ARM64;
 - `distribution-validation.yaml` is a manual deep-distribution diagnostic; and
 - only a `v<semver>` tag whose commit is contained in `main`, with a version matching the project package version, may publish a Release.
 
-The local wrappers run `clean → restore → build → test → pack → validate` through `packaging/Invoke-Build.ps1`. Pull-request packaging is produced once and the exact artifact is installed and exercised on all three host families. The six Release runners on `main` each build and smoke their matching RID ZIP archive; Linux x64 additionally produces and verifies the platform-neutral .NET tool package. Ordinary pushes to `main` never publish.
+The local wrappers run `clean → restore → build → test → pack → validate` through `packaging/Invoke-Build.ps1`. Pull-request packaging is produced once and the exact artifact is installed and exercised on all three host families, including a real PCRE lookbehind smoke. Because PCRE.NET carries architecture-specific native code, PR validation also builds and smokes the matching standalone archive on Windows x64, Windows ARM64, Linux x64, Linux ARM64, macOS x64, and macOS ARM64. The six Release runners on `main` each build and smoke their matching RID ZIP archive; Linux x64 additionally produces and verifies the platform-neutral .NET tool package. Ordinary pushes to `main` never publish.
 
 Tagged Release publication keeps the .NET tool package and the six RID archives independent until the final release rendezvous. NuGet.org and GitHub Packages publish the same exact verified package in parallel. See `packaging/README.md` for the detailed distribution contract.
 
@@ -70,8 +70,7 @@ Debug, Staging, and Release all use portable debug information in the product an
     Interpret PATTERNS as basic regular expressions. This is the default.
 
 -P, --perl-regexp
-    Request Perl-compatible regular expressions. This managed build reports
-    that PCRE-compatible matching is unavailable.
+    Interpret PATTERNS as Perl-compatible regular expressions.
 
 -e, --regexp=PATTERNS
     Use PATTERNS for matching. May be specified more than once.
@@ -226,6 +225,8 @@ Multiple `-e` and `-f` sources are combined in encounter order. Newlines inside 
 
 GNU Basic Regular Expressions and GNU Extended Regular Expressions are implemented through `Icod.CommandFramework.RegularExpressions`. Fixed-string mode performs literal matching with the selected case policy.
 
+Perl-compatible regular expressions are implemented through PCRE.NET 1.6.0 / PCRE2 10.48. In C/POSIX locale mode PCRE operates on the preserved 8-bit record bytes. In supported UTF-8 locales grep enables PCRE2 UTF and UCP behavior plus malformed-UTF matching support, while retaining GNU grep's ASCII-only `\d` semantics; PCRE2 pattern-level overrides such as `(?-aD)` remain available.
+
 ## FILES
 
 With no FILE operand, `grep` reads standard input. A FILE operand of `-` also denotes standard input.
@@ -260,7 +261,7 @@ Migrated to .Net by Timothy J. Bruce <uniblab@hotmail.com>.
 
 Copyright (c) 2026 Timothy J. Bruce
 
-See `grep.LICENSE.txt` and the repository `LICENSE` file for licensing terms and notices applicable to this project.
+See `LICENSE` for the Icod.Grep license and `THIRD-PARTY-NOTICES.md` for the PCRE.NET, PCRE2, and sljit notices applicable to the redistributed `-P` runtime.
 
 ## SEE ALSO
 
