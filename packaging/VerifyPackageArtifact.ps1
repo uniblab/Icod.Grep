@@ -60,6 +60,7 @@ try {
         "tools/$targetFramework/any/PCRE.NET.dll",
         'README.md',
         'LICENSE',
+        'THIRD-PARTY-NOTICES.md',
         'icon.png'
     )
     foreach ($required in $requiredEntries) {
