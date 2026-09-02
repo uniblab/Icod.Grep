@@ -101,6 +101,21 @@ jobs:
           & $grep -P '(?<=foo)bar' sample.txt
           if (0 -ne $LASTEXITCODE) { throw 'Packed grep PCRE smoke failed.' }
 
+          if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+              [System.IO.File]::WriteAllBytes(
+                  'crlf.txt',
+                  [System.Text.Encoding]::ASCII.GetBytes("alpha`r`nbeta`r`n")
+              )
+              & $grep -x alpha crlf.txt
+              if (0 -ne $LASTEXITCODE) {
+                  throw 'Packed grep Windows default text-mode CRLF smoke failed.'
+              }
+              & $grep -U -x alpha crlf.txt
+              if (1 -ne $LASTEXITCODE) {
+                  throw "Packed grep Windows -U CRLF smoke returned $LASTEXITCODE; expected 1."
+              }
+          }
+
   archive-smoke:
     needs: validate
     strategy:
