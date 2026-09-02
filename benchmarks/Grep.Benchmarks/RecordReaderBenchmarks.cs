@@ -5,7 +5,7 @@ using Icod.CommandFramework.Records;
 
 /// <summary>Measures the shared materializing byte-record pipeline used by grep.</summary>
 [MemoryDiagnoser]
-public sealed class RecordReaderBenchmarks {
+public class RecordReaderBenchmarks {
 	private byte[] input = Array.Empty<byte>();
 
 	/// <summary>Gets the logical record length.</summary>
