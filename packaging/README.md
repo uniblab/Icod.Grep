@@ -54,13 +54,13 @@ The deep validation script restores, builds, and tests the solution; exercises t
 For example:
 
 ```text
-pwsh ./packaging/BuildReleaseArchive.ps1 -Configuration Release -RuntimeIdentifier win-x64 -Version 1.0.1
+pwsh ./packaging/BuildReleaseArchive.ps1 -Configuration Release -RuntimeIdentifier win-x64 -Version 1.1.0
 ```
 
 The resulting archive is written under `artifacts/release/` with a name such as:
 
 ```text
-Icod.Grep-1.0.1-win-x64.zip
+Icod.Grep-1.1.0-win-x64.zip
 ```
 
 The archive builder structurally verifies the archive and executes the staged command whenever the requested RID matches the current host.

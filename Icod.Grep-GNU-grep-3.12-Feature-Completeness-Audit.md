@@ -2,7 +2,8 @@
 
 **Audit baseline:** `main` at `996861022cf1d28e3a6977df6e900df98fd7ff98`  
 **Target:** GNU grep 3.12 command behavior  
-**Audit release:** `1.0.1`
+**Audit release:** `1.0.1`  
+**Current parity release:** `1.1.0` — T2 command semantics closes G04, G05, and G06
 
 ## Executive summary
 
@@ -13,15 +14,15 @@ The repository is **not yet feature-complete against GNU grep 3.12**. The remain
 1. Perl-compatible regular expressions (`-P`) are recognized but unavailable.
 2. GNU locale/environment selection is not wired into matching and pattern decoding.
 3. GNU color behavior is only partially implemented.
-4. `POSIXLY_CORRECT` option-order behavior is not implemented.
-5. Default device handling under `-r` differs from GNU grep.
-6. `-o` combined with context options does not yet follow GNU's warning/no-effect contract exactly.
+4. ✅ `POSIXLY_CORRECT` option-order behavior is implemented in `1.1.0`.
+5. ✅ Default device handling under `-r` is aligned with GNU grep in `1.1.0`.
+6. ✅ `-o` combined with context options follows GNU's warning/no-effect contract in `1.1.0`.
 7. Binary classification does not yet account for locale encoding errors the way GNU grep does.
 8. Cross-platform text-mode/CRLF behavior needs explicit GNU-parity tests.
 9. Multi-character locale collating elements remain outside the shared managed regex engine.
 10. `egrep` / `fgrep` compatibility entry points are not supplied; GNU itself treats these names as obsolescent.
 
-The first six items are concrete implementation gaps. Items 7–10 are compatibility boundaries or parity risks that should be closed with targeted tests and, where necessary, implementation work.
+Items 1–3 remain concrete implementation gaps. Items 4–6 are closed by the `1.1.0` T2 command-semantics tranche. Items 7–10 remain compatibility boundaries or parity risks that should be closed with targeted tests and, where necessary, implementation work.
 
 ## Baseline sources
 
@@ -130,9 +131,9 @@ The current implementation supports `--color=never|auto|always` aliases and high
 ### G04 — `POSIXLY_CORRECT`
 
 **Priority:** Medium  
-**Status:** Missing
+**Status:** Closed in `1.1.0`
 
-The parser currently always uses GNU operand permutation. GNU grep switches to POSIX option ordering when `POSIXLY_CORRECT` is set, so options appearing after file operands are then treated as file operands rather than permuted options.
+The parser now selects POSIX required ordering when `POSIXLY_CORRECT` is present and GNU operand permutation otherwise. GNU grep switches to POSIX option ordering when `POSIXLY_CORRECT` is set, so options appearing after file operands are then treated as file operands rather than permuted options.
 
 **Closure criteria:**
 
@@ -143,9 +144,9 @@ The parser currently always uses GNU operand permutation. GNU grep switches to P
 ### G05 — Default device policy during recursion
 
 **Priority:** Medium  
-**Status:** Behavioral mismatch
+**Status:** Closed in `1.1.0`
 
-GNU grep defaults to reading devices/FIFOs/sockets when they are command-line operands or when `-R` is used, but defaults to skipping them when they are encountered recursively under `-r`. The current `DeviceMode` default is `Read`; recursive traversal skips `FileSystemEntryKind.Other` only when `--devices=skip` was explicitly selected.
+Recursive `-r` / `-d recurse` now skips discovered special files by default, while direct operands and `-R` retain read-by-default behavior. An explicit `-D read|skip` overrides the default policy.
 
 **Closure criteria:**
 
@@ -157,9 +158,9 @@ GNU grep defaults to reading devices/FIFOs/sockets when they are command-line op
 ### G06 — `-o` with context options
 
 **Priority:** Medium  
-**Status:** Partial mismatch
+**Status:** Closed in `1.1.0`
 
-GNU grep specifies that `-A`, `-B`, and `-C` have no effect with `-o` and that a warning is emitted. `Icod.Grep` zeroes the context counts but leaves the internal `ContextRequested` flag set. That can still cause group separators between output from separate files, and no GNU-compatible warning is emitted.
+When context is requested with `-o`, `Icod.Grep` now emits a warning, clears context state completely, and suppresses context-group separators.
 
 **Closure criteria:**
 
@@ -222,9 +223,9 @@ No change is required for core `grep` completeness. If command-name compatibilit
 
 Address G02 and G07 together. They share the same locale-selection and decoding boundary and should not be implemented independently.
 
-### T2 — Command semantics
+### T2 — Command semantics — complete in `1.1.0`
 
-Address G04, G05, and G06. These are self-contained grep command behaviors with comparatively low architectural risk.
+G04, G05, and G06 are closed with targeted regression tests.
 
 ### T3 — Color completeness
 
@@ -240,4 +241,4 @@ Close G08 and G09 with targeted tests and implementation only where the selected
 
 ## Release assessment
 
-Version `1.0.1` is appropriate as a maintenance release for the current repository changes: the `Icod.CommandFramework` dependency has moved to `2.1.0`, the NuGet package now has an icon, CI/CD has been standardized, and this audit establishes the remaining GNU grep 3.12 closure work. The audit does **not** claim that the gaps above are fixed in `1.0.1`.
+Version `1.0.1` was the maintenance release that established this audit. Version `1.1.0` is the first parity release and closes G04, G05, and G06. The original `1.0.1` assessment was: the `Icod.CommandFramework` dependency has moved to `2.1.0`, the NuGet package now has an icon, CI/CD has been standardized, and this audit establishes the remaining GNU grep 3.12 closure work. The audit does **not** claim that the gaps above are fixed in `1.0.1`.
