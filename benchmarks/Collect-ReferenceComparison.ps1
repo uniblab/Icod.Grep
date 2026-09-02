@@ -1,7 +1,11 @@
 [CmdletBinding()]
 param(
-    [string]$Filter = '*CommandBenchmarks*',
+    [string]$Filter = '*',
     [string]$OutputDirectory = 'artifacts/performance/reference-comparison',
+    [ValidateRange(1, 8)]
+    [int]$Passes = 2,
+    [ValidateRange(0, 600)]
+    [int]$CooldownSeconds = 30,
     [switch]$AllowDirty,
     [switch]$Smoke
 )
@@ -39,6 +43,9 @@ try {
     }
 
     $outputRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputDirectory))
+    if (Test-Path -LiteralPath $outputRoot) {
+        Remove-Item -LiteralPath $outputRoot -Recurse -Force
+    }
     New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 
     $inventoryPath = Join-Path $repoRoot 'hardware_inventory.txt'
@@ -66,6 +73,30 @@ try {
             Copy-Item -LiteralPath $_.FullName -Destination $baselineProject -Recurse -Force
         }
 
+        function Initialize-IcodBenchmarkVariant {
+            param(
+                [Parameter(Mandatory)]
+                [string]$Root,
+                [Parameter(Mandatory)]
+                [string]$Label
+            )
+
+            Push-Location $Root
+            try {
+                dotnet restore benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj
+                if (0 -ne $LASTEXITCODE) {
+                    throw "$Label benchmark restore failed."
+                }
+
+                dotnet build benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-restore
+                if (0 -ne $LASTEXITCODE) {
+                    throw "$Label benchmark build failed."
+                }
+            } finally {
+                Pop-Location
+            }
+        }
+
         function Invoke-IcodBenchmarkVariant {
             param(
                 [Parameter(Mandatory)]
@@ -73,13 +104,13 @@ try {
                 [Parameter(Mandatory)]
                 [string]$Label,
                 [Parameter(Mandatory)]
-                [string]$Commit
+                [string]$Commit,
+                [Parameter(Mandatory)]
+                [int]$Pass
             )
 
-            $variantOutput = Join-Path $outputRoot $Label
-            if (Test-Path -LiteralPath $variantOutput) {
-                Remove-Item -LiteralPath $variantOutput -Recurse -Force
-            }
+            $passLabel = "$Label-pass-$Pass"
+            $variantOutput = Join-Path $outputRoot $passLabel
             New-Item -ItemType Directory -Path $variantOutput -Force | Out-Null
 
             $previousSource = $env:ICOD_BENCHMARK_SOURCE
@@ -89,7 +120,7 @@ try {
             $previousInventory = $env:ICOD_REFERENCE_INVENTORY_PATH
             try {
                 $env:ICOD_BENCHMARK_SOURCE = if ($Smoke) { 'OrchestrationSmoke' } else { 'PhysicalReference' }
-                $env:ICOD_BENCHMARK_LABEL = $Label
+                $env:ICOD_BENCHMARK_LABEL = $passLabel
                 $env:ICOD_BENCHMARK_COMMIT = $Commit
                 $env:ICOD_BENCHMARK_METADATA_PATH = Join-Path $variantOutput 'metadata.json'
                 $env:ICOD_REFERENCE_INVENTORY_PATH = $inventoryPath
@@ -101,27 +132,17 @@ try {
                         Remove-Item -LiteralPath $bdnArtifacts -Recurse -Force
                     }
 
-                    dotnet restore benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj
-                    if (0 -ne $LASTEXITCODE) {
-                        throw "$Label benchmark restore failed."
-                    }
-
-                    dotnet build benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-restore
-                    if (0 -ne $LASTEXITCODE) {
-                        throw "$Label benchmark build failed."
-                    }
-
                     if ($Smoke) {
                         dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --metadata $env:ICOD_BENCHMARK_METADATA_PATH
                         if (0 -ne $LASTEXITCODE) {
-                            throw "$Label benchmark metadata smoke failed."
+                            throw "$passLabel benchmark metadata smoke failed."
                         }
                         dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --smoke
                     } else {
                         dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --filter $Filter
                     }
                     if (0 -ne $LASTEXITCODE) {
-                        throw "$Label benchmark run failed."
+                        throw "$passLabel benchmark run failed."
                     }
 
                     if (Test-Path -LiteralPath $bdnArtifacts) {
@@ -137,20 +158,62 @@ try {
                 $env:ICOD_BENCHMARK_METADATA_PATH = $previousMetadata
                 $env:ICOD_REFERENCE_INVENTORY_PATH = $previousInventory
             }
+
+            return [PSCustomObject]@{
+                Label = $Label
+                Pass = $Pass
+                Output = $passLabel
+                Commit = $Commit
+            }
         }
 
-        Invoke-IcodBenchmarkVariant -Root $baselineRoot -Label 'baseline-1.5.0' -Commit $baselineCommit
-        Invoke-IcodBenchmarkVariant -Root $repoRoot -Label 'candidate' -Commit $candidateCommit
+        Initialize-IcodBenchmarkVariant -Root $baselineRoot -Label 'baseline-1.5.0'
+        Initialize-IcodBenchmarkVariant -Root $repoRoot -Label 'candidate'
+
+        $effectivePasses = if ($Smoke) { 1 } else { $Passes }
+        $effectiveCooldownSeconds = if ($Smoke) { 0 } else { $CooldownSeconds }
+        $sequence = New-Object System.Collections.Generic.List[object]
+
+        for ($pass = 1; $pass -le $effectivePasses; $pass++) {
+            if (0 -eq ($pass % 2)) {
+                $variants = @(
+                    [PSCustomObject]@{ Root = $repoRoot; Label = 'candidate'; Commit = $candidateCommit },
+                    [PSCustomObject]@{ Root = $baselineRoot; Label = 'baseline-1.5.0'; Commit = $baselineCommit }
+                )
+            } else {
+                $variants = @(
+                    [PSCustomObject]@{ Root = $baselineRoot; Label = 'baseline-1.5.0'; Commit = $baselineCommit },
+                    [PSCustomObject]@{ Root = $repoRoot; Label = 'candidate'; Commit = $candidateCommit }
+                )
+            }
+
+            foreach ($variant in $variants) {
+                $sequence.Add(
+                    (Invoke-IcodBenchmarkVariant `
+                        -Root $variant.Root `
+                        -Label $variant.Label `
+                        -Commit $variant.Commit `
+                        -Pass $pass)
+                )
+
+                if (0 -lt $effectiveCooldownSeconds) {
+                    Start-Sleep -Seconds $effectiveCooldownSeconds
+                }
+            }
+        }
 
         $comparison = [PSCustomObject]@{
-            SchemaVersion = 1
+            SchemaVersion = 2
             BaselineCommit = $baselineCommit
             CandidateCommit = $candidateCommit
             Filter = $Filter
             Smoke = [bool]$Smoke
+            Passes = $effectivePasses
+            CooldownSeconds = $effectiveCooldownSeconds
+            Sequence = $sequence.ToArray()
             HardwareInventorySha256 = (Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash.ToLowerInvariant()
             CollectedUtc = [DateTimeOffset]::UtcNow.ToString('O')
-        } | ConvertTo-Json -Depth 4
+        } | ConvertTo-Json -Depth 6
         $comparisonPath = Join-Path $outputRoot 'comparison.json'
         [System.IO.File]::WriteAllText(
             $comparisonPath,
