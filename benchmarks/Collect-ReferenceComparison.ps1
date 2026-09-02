@@ -46,7 +46,8 @@ try {
         throw 'hardware_inventory.txt is required for the reference-host comparison.'
     }
 
-    $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('Icod.Grep-T6-' + [Guid]::NewGuid().ToString('N'))
+    $repoParent = Split-Path -Parent $repoRoot
+    $temporaryRoot = Join-Path $repoParent ('Icod.Grep-T6-' + [Guid]::NewGuid().ToString('N'))
     $baselineRoot = Join-Path $temporaryRoot 'baseline'
     New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 
@@ -141,7 +142,7 @@ try {
         Invoke-IcodBenchmarkVariant -Root $baselineRoot -Label 'baseline-1.5.0' -Commit $baselineCommit
         Invoke-IcodBenchmarkVariant -Root $repoRoot -Label 'candidate' -Commit $candidateCommit
 
-        [PSCustomObject]@{
+        $comparison = [PSCustomObject]@{
             SchemaVersion = 1
             BaselineCommit = $baselineCommit
             CandidateCommit = $candidateCommit
@@ -149,7 +150,13 @@ try {
             Smoke = [bool]$Smoke
             HardwareInventorySha256 = (Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash.ToLowerInvariant()
             CollectedUtc = [DateTimeOffset]::UtcNow.ToString('O')
-        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $outputRoot 'comparison.json') -Encoding utf8NoBOM
+        } | ConvertTo-Json -Depth 4
+        $comparisonPath = Join-Path $outputRoot 'comparison.json'
+        [System.IO.File]::WriteAllText(
+            $comparisonPath,
+            $comparison,
+            [System.Text.UTF8Encoding]::new($false)
+        )
 
         Write-Host "Reference comparison written to $outputRoot"
     } finally {
