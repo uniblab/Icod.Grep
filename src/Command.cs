@@ -561,6 +561,7 @@ public static class Command {
 				).ConfigureAwait( false );
 				return CommandExitCodes.UsageError;
 			}
+			PlatformIoContext.ApplyParsedBinaryPlatformMode( parsed.HasOption( "binary-platform" ) );
 			if ( parsed.HasOption( "help" ) ) {
 				await WriteHelpAsync( context ).ConfigureAwait( false );
 				return CommandExitCodes.Success;
