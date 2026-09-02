@@ -1,5 +1,6 @@
 namespace Icod.Grep.Tests;
 
+using System.Net.Sockets;
 using System.Text;
 using Icod.CommandFramework.Diagnostics;
 using Xunit;
@@ -46,6 +47,26 @@ public sealed class CommandTests {
 		var result = await RunAsync( [ "-efoo", "-1" ], "foo\nbar\n"u8.ToArray() );
 		Assert.Equal( CommandExitCodes.Success, result.Status );
 		Assert.Equal( "foo\nbar\n"u8.ToArray(), result.Output );
+	}
+
+	/// <summary>Verifies POSIXLY_CORRECT stops option parsing at the first operand.</summary>
+	/// <returns>A task representing the test.</returns>
+	[Fact]
+	public async Task PosixlyCorrectRequiresOptionsBeforeOperands() {
+		var previous = Environment.GetEnvironmentVariable( "POSIXLY_CORRECT" );
+		try {
+			Environment.SetEnvironmentVariable( "POSIXLY_CORRECT", null );
+			var gnu = await RunAsync( [ "hit", "-n" ], "hit\n"u8.ToArray() );
+			Assert.Equal( CommandExitCodes.Success, gnu.Status );
+			Assert.Equal( "1:hit\n"u8.ToArray(), gnu.Output );
+
+			Environment.SetEnvironmentVariable( "POSIXLY_CORRECT", "1" );
+			var posix = await RunAsync( [ "hit", "-n" ], "hit\n"u8.ToArray() );
+			Assert.Equal( CommandExitCodes.UsageError, posix.Status );
+			Assert.Contains( "-n", posix.Error );
+		} finally {
+			Environment.SetEnvironmentVariable( "POSIXLY_CORRECT", previous );
+		}
 	}
 
 	/// <summary>Verifies multiple expression and pattern-file sources are combined in encounter order.</summary>
@@ -299,9 +320,11 @@ public sealed class CommandTests {
 				Encoding.UTF8.GetString( result.Output )
 			);
 			Assert.Equal(
-				string.Concat( first, ":hit\n--\n", second, ":hit\n" ),
+				string.Concat( first, ":hit\n", second, ":hit\n" ),
 				Encoding.UTF8.GetString( onlyMatching.Output )
 			);
+			Assert.Contains( "warning", onlyMatching.Error, StringComparison.OrdinalIgnoreCase );
+			Assert.Contains( "only-matching", onlyMatching.Error, StringComparison.OrdinalIgnoreCase );
 		} finally {
 			Directory.Delete( directory, recursive: true );
 		}
@@ -361,6 +384,49 @@ public sealed class CommandTests {
 			Assert.Contains( "alpha.txt", output );
 			Assert.DoesNotContain( "beta.log", output );
 			Assert.DoesNotContain( "inside.txt", output );
+		} finally {
+			Directory.Delete( directory, recursive: true );
+		}
+	}
+
+	/// <summary>Verifies recursive -r skips discovered special files by default while -D read overrides that policy.</summary>
+	/// <returns>A task representing the test.</returns>
+	[Fact]
+	public async Task RecursiveDeviceDefaultsMatchGnuPolicy() {
+		if ( OperatingSystem.IsWindows() ) {
+			return;
+		}
+
+		var temporaryRoot = OperatingSystem.IsMacOS() ? "/tmp" : System.IO.Path.GetTempPath();
+		var rootInfo = new DirectoryInfo( temporaryRoot );
+		var resolvedRoot = rootInfo.ResolveLinkTarget( returnFinalTarget: true );
+		if ( resolvedRoot is not null ) {
+			temporaryRoot = resolvedRoot.FullName;
+		}
+		var directory = System.IO.Path.Combine(
+			temporaryRoot,
+			string.Concat( "ig-", Guid.NewGuid().ToString( "N" )[ ..8 ] )
+		);
+		Directory.CreateDirectory( directory );
+		try {
+			var regular = System.IO.Path.Combine( directory, "regular.txt" );
+			var socketPath = System.IO.Path.Combine( directory, "probe.sock" );
+			if ( OperatingSystem.IsMacOS() && socketPath.Length > 104 ) {
+				return;
+			}
+			await File.WriteAllTextAsync( regular, "hit\n" );
+			using var socket = new Socket( AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified );
+			socket.Bind( new UnixDomainSocketEndPoint( socketPath ) );
+			socket.Listen();
+
+			var defaultResult = await RunAsync( [ "-r", "hit", directory ], [] );
+			Assert.Equal( CommandExitCodes.Success, defaultResult.Status );
+			Assert.Contains( "regular.txt", Encoding.UTF8.GetString( defaultResult.Output ) );
+			Assert.Empty( defaultResult.Error );
+
+			var explicitRead = await RunAsync( [ "-r", "-D", "read", "hit", directory ], [] );
+			Assert.Equal( CommandExitCodes.UsageError, explicitRead.Status );
+			Assert.NotEmpty( explicitRead.Error );
 		} finally {
 			Directory.Delete( directory, recursive: true );
 		}
@@ -478,7 +544,7 @@ public sealed class CommandTests {
 		Assert.Equal( CommandExitCodes.Success, help.Status );
 		Assert.Contains( "Usage: grep", help.TextOutput );
 		Assert.Equal( CommandExitCodes.Success, version.Status );
-		Assert.Contains( "grep (Icod.Grep)", version.TextOutput );
+		Assert.Contains( "grep (Icod.Grep) 1.1.0", version.TextOutput );
 	}
 
 	/// <summary>Verifies cancellation returns the shared canceled status.</summary>

@@ -13,14 +13,14 @@
 		<AssemblyName>grep</AssemblyName>
 		<RootNamespace>Icod.Grep</RootNamespace>
 		<Configurations>Debug;Release;Staging</Configurations>
-		<Version>1.0.1</Version>
-		<AssemblyVersion>1.0.1.0</AssemblyVersion>
+		<Version>1.1.0</Version>
+		<AssemblyVersion>1.1.0.0</AssemblyVersion>
 		<DebugType>portable</DebugType>
 		<DebugSymbols>true</DebugSymbols>
 		<SignAssembly>false</SignAssembly>
 	</PropertyGroup>
 	<PropertyGroup>
-		<PackageVersion>1.0.1</PackageVersion>
+		<PackageVersion>1.1.0</PackageVersion>
 		<PackAsTool>true</PackAsTool>
 		<ToolCommandName>grep</ToolCommandName>
 		<PackageId>Icod.Grep</PackageId>
@@ -33,7 +33,7 @@
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
 		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
-		<PackageReleaseNotes>Updates Icod.CommandFramework to 2.1.0, adds the NuGet package icon, standardizes CI/CD, and records the GNU grep 3.12 feature-completeness audit.</PackageReleaseNotes>
+		<PackageReleaseNotes>Improves GNU grep 3.12 compatibility: honors POSIXLY_CORRECT option ordering, applies GNU recursive device defaults with -D overrides, and warns/disables context behavior with --only-matching.</PackageReleaseNotes>
 		<PackageTags>grep;gnu-grep;gnu;search;text-search;regex;regular-expression;cli;command-line;tool;dotnet-tool;icod;posix;bre;ere;fixed-strings;recursive-search;cross-platform;net10;dotnet</PackageTags>
 		<PackageIcon>icon.png</PackageIcon>
 	</PropertyGroup>
