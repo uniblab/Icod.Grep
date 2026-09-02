@@ -16,12 +16,16 @@ GNU grep 3.12 distinguishes text and binary I/O on Windows. In default text I/O,
 
 The matcher remains byte-oriented. Windows compatibility is implemented at the platform I/O boundary:
 
-1. `PlatformIoContext` selects default Windows text mode and bypasses it for `-U` / `--binary`.
-2. `WindowsTextInputStream` collapses CRLF to LF and honors Control-Z EOF, including CR boundaries split across read buffers.
-3. `WindowsTextOutputStream` expands LF to CRLF for process standard output.
-4. The grep-local file-stream adapter applies the same input policy to operands and pattern files opened by grep.
-5. Linux/macOS retain the existing raw-byte path.
-6. The real installed Windows tool is exercised in CI against both default and `-U` behavior.
+1. `PlatformIoContext` establishes default Windows text mode for process execution.
+2. Standard-input/output adapters defer their concrete text/binary behavior until the canonical `OptionParser` has parsed the command line.
+3. After a successful parse, `Command` publishes the actual `binary-platform` / `-U` selection to `PlatformIoContext`; there is no independent command-line pre-parser.
+4. `WindowsTextInputStream` collapses CRLF to LF and honors Control-Z EOF, including CR boundaries split across read buffers.
+5. `WindowsTextOutputStream` expands LF to CRLF for process standard output.
+6. The grep-local file-stream adapter applies the same input policy to operands and pattern files opened after parsing.
+7. Linux/macOS retain the existing raw-byte path.
+8. The real installed Windows tool is exercised in CI against both default and `-U` behavior.
+
+Keeping option ownership in the canonical parser preserves GNU option ordering, required option values, long-option abbreviations, and `POSIXLY_CORRECT` semantics without duplicating them in platform I/O code.
 
 ### G08 conformance coverage
 
