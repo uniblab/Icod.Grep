@@ -2,6 +2,12 @@
 
 This directory contains the measurement infrastructure for the `1.6.0` T6 performance and scalability tranche.
 
+## T6.0 status
+
+The benchmark foundation is implemented and its deterministic smoke has passed on GitHub-hosted Windows, Linux, and macOS. The development version surfaces are synchronized to `1.6.0` while the comparison script pins the immutable `1.5.0` merge commit as the baseline.
+
+The remaining T6.0 exit gate is measurement rather than code: run `Collect-ReferenceComparison.ps1` on the physical Windows reference laptop and retain the resulting baseline/candidate report. Production hot-path optimization must not begin until those measurements identify the bottlenecks worth attacking.
+
 ## Measurement policy
 
 The authoritative quantitative series is collected on the physical Windows reference laptop documented by the repository's `hardware_inventory.txt`. The inventory itself is **not copied into benchmark artifacts**. Reports record only the inventory filename and SHA-256 digest so a result can be tied to the reference-machine declaration without duplicating serial numbers or other machine-specific inventory fields.
