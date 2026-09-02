@@ -1091,7 +1091,7 @@ public static class Command {
 					if ( item.Entry is null || item.Entry.Kind == FileSystemEntryKind.Directory ) {
 						break;
 					}
-					if ( item.Entry.Kind == FileSystemEntryKind.Other && ShouldSkipRecursiveDevice( options ) ) {
+					if ( IsDeviceEntryKind( item.Entry.Kind ) && ShouldSkipRecursiveDevice( options ) ) {
 						break;
 					}
 					try {
@@ -1678,6 +1678,13 @@ public static class Command {
 		}
 		return false;
 	}
+
+	private static bool IsDeviceEntryKind( FileSystemEntryKind kind ) => kind is
+		FileSystemEntryKind.Other
+		or FileSystemEntryKind.BlockDevice
+		or FileSystemEntryKind.CharacterDevice
+		or FileSystemEntryKind.Fifo
+		or FileSystemEntryKind.Socket;
 
 	private static bool ShouldSkipRecursiveDevice( GrepOptions options ) {
 		if ( options.DeviceModeExplicit ) {
