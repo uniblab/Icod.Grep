@@ -56,6 +56,7 @@ try {
         $settingsPath,
         "tools/$targetFramework/any/grep.dll",
         "tools/$targetFramework/any/grep.runtimeconfig.json",
+        "tools/$targetFramework/any/Icod.DCurses.dll",
         'README.md',
         'LICENSE',
         'icon.png'
@@ -80,6 +81,7 @@ try {
     if ('grep' -ne "$($commands[0].Name)" -or 'dotnet' -ne "$($commands[0].Runner)") {
         throw "Package '$($package.Name)' does not declare the expected grep/dotnet tool command."
     }
+
 } finally {
     $archive.Dispose()
 }
