@@ -175,6 +175,9 @@ internal sealed class FileStream : Stream {
 		FileOptions options
 	) {
 		ArgumentException.ThrowIfNullOrWhiteSpace( path );
+		if ( FileAccess.Read == access ) {
+			bufferSize = 1;
+		}
 		this.source = new System.IO.FileStream(
 			path,
 			mode,
