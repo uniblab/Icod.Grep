@@ -75,7 +75,7 @@ public static class Command {
 	private sealed record LineRecord( byte[] Content, bool IsTerminated, long LineNumber, long ByteOffset, bool HasEncodingError );
 	private sealed record SourceResult( bool HasSelectedRecord, bool StopCommand, bool WroteRecordOutput );
 	private sealed record PathRule( bool Include, PathnamePattern Pattern );
-	private sealed record PatternInput(
+	private readonly record struct PatternInput(
 		ReadOnlyMemory<byte> Source,
 		RegularExpressionPreparedByteInput? Prepared
 	);
@@ -371,6 +371,7 @@ public static class Command {
 		private readonly IRegularExpressionCharacterClassProvider characterClassProvider;
 		private readonly TextDecodingMode decodingMode;
 		private readonly RegularExpressionInputOptions? preparedInputOptions;
+		private readonly FixedStringMultiPatternMatcher? fixedMatcher;
 
 		public PatternSet(
 			IReadOnlyList<IGrepPattern> patterns,
@@ -378,7 +379,8 @@ public static class Command {
 			bool lineRegexp,
 			IRegularExpressionCharacterClassProvider characterClassProvider,
 			TextDecodingMode decodingMode,
-			RegularExpressionInputOptions? preparedInputOptions = null
+			RegularExpressionInputOptions? preparedInputOptions = null,
+			FixedStringMultiPatternMatcher? fixedMatcher = null
 		) {
 			this.patterns = patterns;
 			this.wordRegexp = wordRegexp;
@@ -386,6 +388,7 @@ public static class Command {
 			this.characterClassProvider = characterClassProvider;
 			this.decodingMode = decodingMode;
 			this.preparedInputOptions = preparedInputOptions;
+			this.fixedMatcher = fixedMatcher;
 		}
 
 		public bool IsEmpty => this.patterns.Count == 0;
@@ -409,6 +412,20 @@ public static class Command {
 			int startOffset,
 			CancellationToken cancellationToken
 		) {
+			if ( this.fixedMatcher is not null ) {
+				var match = this.fixedMatcher.Find(
+					input.Source.Span,
+					startOffset,
+					cancellationToken
+				);
+				return ( match is null )
+					? null
+					: new MatchSpan(
+						match.Value.Index,
+						match.Value.Length
+					)
+				;
+			}
 			MatchSpan? best = null;
 			foreach ( var pattern in this.patterns ) {
 				var searchOffset = startOffset;
@@ -1061,6 +1078,25 @@ public static class Command {
 		};
 		var patterns = new List<IGrepPattern>();
 		if ( options.PatternMode == PatternMode.Fixed ) {
+			FixedStringMultiPatternMatcher? fixedMatcher = null;
+			if (
+				1 < patternTexts.Count
+				&& !options.IgnoreCase
+				&& !options.WordRegexp
+				&& !options.LineRegexp
+				&& patternTexts.All(
+					static pattern => 0 < pattern.Length
+				)
+			) {
+				var fixedPatternBytes = patternTexts.Select(
+					patternText => ( TextDecodingMode.Bytes == options.Locale.DecodingMode )
+						? Encoding.Latin1.GetBytes( patternText )
+						: Encoding.UTF8.GetBytes( patternText )
+				).ToArray();
+				fixedMatcher = new FixedStringMultiPatternMatcher(
+					fixedPatternBytes
+				);
+			}
 			foreach ( var patternText in patternTexts ) {
 				patterns.Add( new FixedPattern(
 					patternText,
@@ -1074,7 +1110,8 @@ public static class Command {
 				options.WordRegexp,
 				options.LineRegexp,
 				characterClassProvider,
-				options.Locale.DecodingMode
+				options.Locale.DecodingMode,
+				fixedMatcher: fixedMatcher
 			);
 		}
 		if ( options.PatternMode == PatternMode.Perl ) {
@@ -1455,7 +1492,7 @@ public static class Command {
 				: patterns.Prepare( record.Content, context.CancellationToken );
 			var firstMatch = patternInput is null
 				? null
-				: patterns.Find( patternInput, 0, context.CancellationToken );
+				: patterns.Find( patternInput.Value, 0, context.CancellationToken );
 			var lineMatches = firstMatch is not null;
 			var selected = !selectionLimitReached
 				&& (options.InvertMatch ? !lineMatches : lineMatches);
@@ -1490,7 +1527,7 @@ public static class Command {
 					}
 					if ( options.OnlyMatching ) {
 						if ( !options.InvertMatch && patternInput is not null ) {
-							var spans = patterns.FindAll( patternInput, context.CancellationToken );
+							var spans = patterns.FindAll( patternInput.Value, context.CancellationToken );
 							if ( spans.Count > 0 && !wroteRecordOutput ) {
 								await WriteInterSourceSeparatorAsync(
 									separateBeforeRecordOutput,
