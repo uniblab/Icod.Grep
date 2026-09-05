@@ -17,8 +17,9 @@ using PCRE;
 
 /// <summary>Implements GNU-compatible pattern searching over byte-preserving input records.</summary>
 public static class Command {
-	private const string VersionText = "grep (Icod.Grep) 1.5.0";
+	private const string VersionText = "grep (Icod.Grep) 1.6.0";
 	private const int BinaryProbeLength = 98_304;
+	private const int BinaryProbeChunkLength = 8_192;
 	private static readonly byte[] ColorReset = "\u001b[m"u8.ToArray();
 	private static readonly byte[] EraseLine = "\u001b[K"u8.ToArray();
 
@@ -72,9 +73,13 @@ public static class Command {
 	private sealed record PatternSource( PatternSourceKind Kind, string Value );
 	private sealed record MatchSpan( int Index, int Length );
 	private sealed record InputSource( string AccessPath, string DisplayName, bool IsStandardInput );
-	private sealed record LineRecord( byte[] Content, bool IsTerminated, long LineNumber, long ByteOffset, bool HasEncodingError );
+	private sealed record LineRecord( ReadOnlyMemory<byte> Content, bool IsTerminated, long LineNumber, long ByteOffset, bool HasEncodingError );
 	private sealed record SourceResult( bool HasSelectedRecord, bool StopCommand, bool WroteRecordOutput );
 	private sealed record PathRule( bool Include, PathnamePattern Pattern );
+	private readonly record struct PatternInput(
+		ReadOnlyMemory<byte> Source,
+		RegularExpressionPreparedByteInput? Prepared
+	);
 
 	private sealed class GrepOptions {
 		public PatternMode PatternMode { get; set; } = PatternMode.Basic;
@@ -176,7 +181,11 @@ public static class Command {
 	}
 
 	private interface IGrepPattern {
-		MatchSpan? Find( ReadOnlyMemory<byte> input, int startOffset, CancellationToken cancellationToken );
+		MatchSpan? Find(
+			PatternInput input,
+			int startOffset,
+			CancellationToken cancellationToken
+		);
 	}
 
 	private sealed class RegularExpressionPattern : IGrepPattern {
@@ -191,13 +200,26 @@ public static class Command {
 			this.inputOptions = inputOptions;
 		}
 
-		public MatchSpan? Find( ReadOnlyMemory<byte> input, int startOffset, CancellationToken cancellationToken ) {
-			var result = this.expression.Match(
-				input,
-				this.inputOptions,
-				new RegularExpressionByteMatchOptions { StartByteOffset = startOffset },
-				cancellationToken
-			);
+		public MatchSpan? Find(
+			PatternInput input,
+			int startOffset,
+			CancellationToken cancellationToken
+		) {
+			var matchOptions = new RegularExpressionByteMatchOptions {
+				StartByteOffset = startOffset
+			};
+			var result = input.Prepared is null
+				? this.expression.Match(
+					input.Source,
+					this.inputOptions,
+					matchOptions,
+					cancellationToken
+				)
+				: this.expression.Match(
+					input.Prepared,
+					matchOptions,
+					cancellationToken
+				);
 			if ( !result.IsSuccess ) {
 				throw new InvalidOperationException( result.Diagnostic?.Message ?? "regular-expression matching failed" );
 			}
@@ -236,15 +258,15 @@ public static class Command {
 		}
 
 		public MatchSpan? Find(
-			ReadOnlyMemory<byte> input,
+			PatternInput input,
 			int startOffset,
 			CancellationToken cancellationToken
 		) {
 			cancellationToken.ThrowIfCancellationRequested();
-			if ( startOffset < 0 || startOffset > input.Length ) {
+			if ( startOffset < 0 || startOffset > input.Source.Length ) {
 				return null;
 			}
-			var match = this.expression.Match( input.Span, startOffset );
+			var match = this.expression.Match( input.Source.Span, startOffset );
 			cancellationToken.ThrowIfCancellationRequested();
 			return match.Success ? new MatchSpan( match.Index, match.Length ) : null;
 		}
@@ -272,17 +294,21 @@ public static class Command {
 			this.decodingMode = decodingMode;
 		}
 
-		public MatchSpan? Find( ReadOnlyMemory<byte> input, int startOffset, CancellationToken cancellationToken ) {
+		public MatchSpan? Find(
+			PatternInput input,
+			int startOffset,
+			CancellationToken cancellationToken
+		) {
 			cancellationToken.ThrowIfCancellationRequested();
-			if ( startOffset < 0 || startOffset > input.Length ) {
+			if ( startOffset < 0 || startOffset > input.Source.Length ) {
 				return null;
 			}
 			if ( this.pattern.Length == 0 ) {
 				return new MatchSpan( startOffset, 0 );
 			}
 			return this.ignoreCase
-				? this.FindIgnoringCase( input.Span, startOffset, cancellationToken )
-				: this.FindOrdinal( input.Span, startOffset, cancellationToken );
+				? this.FindIgnoringCase( input.Source.Span, startOffset, cancellationToken )
+				: this.FindOrdinal( input.Source.Span, startOffset, cancellationToken );
 		}
 
 		private MatchSpan? FindIgnoringCase(
@@ -345,33 +371,71 @@ public static class Command {
 		private readonly bool lineRegexp;
 		private readonly IRegularExpressionCharacterClassProvider characterClassProvider;
 		private readonly TextDecodingMode decodingMode;
+		private readonly RegularExpressionInputOptions? preparedInputOptions;
+		private readonly FixedStringMultiPatternMatcher? fixedMatcher;
 
 		public PatternSet(
 			IReadOnlyList<IGrepPattern> patterns,
 			bool wordRegexp,
 			bool lineRegexp,
 			IRegularExpressionCharacterClassProvider characterClassProvider,
-			TextDecodingMode decodingMode
+			TextDecodingMode decodingMode,
+			RegularExpressionInputOptions? preparedInputOptions = null,
+			FixedStringMultiPatternMatcher? fixedMatcher = null
 		) {
 			this.patterns = patterns;
 			this.wordRegexp = wordRegexp;
 			this.lineRegexp = lineRegexp;
 			this.characterClassProvider = characterClassProvider;
 			this.decodingMode = decodingMode;
+			this.preparedInputOptions = preparedInputOptions;
+			this.fixedMatcher = fixedMatcher;
 		}
 
 		public bool IsEmpty => this.patterns.Count == 0;
 
-		public MatchSpan? Find( ReadOnlyMemory<byte> input, int startOffset, CancellationToken cancellationToken ) {
+		public PatternInput Prepare(
+			ReadOnlyMemory<byte> input,
+			CancellationToken cancellationToken
+		) {
+			var prepared = this.preparedInputOptions is null
+				? null
+				: RegularExpressionPreparedByteInput.Prepare(
+					input,
+					this.preparedInputOptions,
+					cancellationToken
+				);
+			return new PatternInput( input, prepared );
+		}
+
+		public MatchSpan? Find(
+			PatternInput input,
+			int startOffset,
+			CancellationToken cancellationToken
+		) {
+			if ( this.fixedMatcher is not null ) {
+				var match = this.fixedMatcher.Find(
+					input.Source.Span,
+					startOffset,
+					cancellationToken
+				);
+				return ( match is null )
+					? null
+					: new MatchSpan(
+						match.Value.Index,
+						match.Value.Length
+					)
+				;
+			}
 			MatchSpan? best = null;
 			foreach ( var pattern in this.patterns ) {
 				var searchOffset = startOffset;
-				while ( searchOffset <= input.Length ) {
+				while ( searchOffset <= input.Source.Length ) {
 					var candidate = pattern.Find( input, searchOffset, cancellationToken );
 					if ( candidate is null ) {
 						break;
 					}
-					if ( this.Accepts( input.Span, candidate ) ) {
+					if ( this.Accepts( input.Source.Span, candidate ) ) {
 						if (
 							best is null
 							|| candidate.Index < best.Index
@@ -381,19 +445,22 @@ public static class Command {
 						}
 						break;
 					}
-					if ( candidate.Index >= input.Length ) {
+					if ( candidate.Index >= input.Source.Length ) {
 						break;
 					}
-					searchOffset = AdvanceAfter( input.Span, candidate );
+					searchOffset = AdvanceAfter( input.Source.Span, candidate );
 				}
 			}
 			return best;
 		}
 
-		public IReadOnlyList<MatchSpan> FindAll( ReadOnlyMemory<byte> input, CancellationToken cancellationToken ) {
+		public IReadOnlyList<MatchSpan> FindAll(
+			PatternInput input,
+			CancellationToken cancellationToken
+		) {
 			var output = new List<MatchSpan>();
 			var offset = 0;
-			while ( offset <= input.Length ) {
+			while ( offset <= input.Source.Length ) {
 				var match = this.Find( input, offset, cancellationToken );
 				if ( match is null ) {
 					break;
@@ -401,10 +468,10 @@ public static class Command {
 				if ( match.Length > 0 ) {
 					output.Add( match );
 				}
-				if ( match.Index >= input.Length ) {
+				if ( match.Index >= input.Source.Length ) {
 					break;
 				}
-				offset = AdvanceAfter( input.Span, match );
+				offset = AdvanceAfter( input.Source.Span, match );
 			}
 			return output;
 		}
@@ -503,7 +570,7 @@ public static class Command {
 	/// <param name="standardInput">The standard-input reader.</param>
 	/// <param name="standardOutput">The standard-output writer.</param>
 	/// <param name="standardError">The standard-error writer.</param>
-	/// <returns>The GNU grep exit status: 0 for a selected result, 1 for none, or 2 for an error.</returns>
+	/// <returns>The GNU grep exit status: 0 for a selected result, 1 if none is selected, or 2 on error.</returns>
 	public static int Run(
 		string[] args,
 		TextReader? standardInput = null,
@@ -994,10 +1061,10 @@ public static class Command {
 				} catch ( Exception exception ) when (
 					exception is IOException
 						or DecoderFallbackException
-					or UnauthorizedAccessException
-					or System.Security.SecurityException
-					or ArgumentException
-					or NotSupportedException
+						or UnauthorizedAccessException
+						or System.Security.SecurityException
+						or ArgumentException
+						or NotSupportedException
 				) {
 					await ReportErrorAsync( options, context, string.Concat( source.Value, ": ", exception.Message ) ).ConfigureAwait( false );
 					return null;
@@ -1012,6 +1079,25 @@ public static class Command {
 		};
 		var patterns = new List<IGrepPattern>();
 		if ( options.PatternMode == PatternMode.Fixed ) {
+			FixedStringMultiPatternMatcher? fixedMatcher = null;
+			if (
+				1 < patternTexts.Count
+				&& !options.IgnoreCase
+				&& !options.WordRegexp
+				&& !options.LineRegexp
+				&& patternTexts.All(
+					static pattern => 0 < pattern.Length
+				)
+			) {
+				var fixedPatternBytes = patternTexts.Select(
+					patternText => ( TextDecodingMode.Bytes == options.Locale.DecodingMode )
+						? Encoding.Latin1.GetBytes( patternText )
+						: Encoding.UTF8.GetBytes( patternText )
+				).ToArray();
+				fixedMatcher = new FixedStringMultiPatternMatcher(
+					fixedPatternBytes
+				);
+			}
 			foreach ( var patternText in patternTexts ) {
 				patterns.Add( new FixedPattern(
 					patternText,
@@ -1025,7 +1111,8 @@ public static class Command {
 				options.WordRegexp,
 				options.LineRegexp,
 				characterClassProvider,
-				options.Locale.DecodingMode
+				options.Locale.DecodingMode,
+				fixedMatcher: fixedMatcher
 			);
 		}
 		if ( options.PatternMode == PatternMode.Perl ) {
@@ -1081,7 +1168,8 @@ public static class Command {
 			options.WordRegexp,
 			options.LineRegexp,
 			characterClassProvider,
-			options.Locale.DecodingMode
+			options.Locale.DecodingMode,
+			inputOptions
 		);
 	}
 
@@ -1294,32 +1382,47 @@ public static class Command {
 		if ( options.NullData || options.BinaryFileMode == BinaryFileMode.Text ) {
 			return (stream, false);
 		}
-		var startPosition = stream.CanSeek ? stream.Position : 0L;
-		var prefix = new byte[BinaryProbeLength];
-		var count = 0;
 		if ( stream.CanSeek ) {
-			while ( count < prefix.Length ) {
-				cancellationToken.ThrowIfCancellationRequested();
-				var read = await stream.ReadAsync(
-					prefix.AsMemory( count, prefix.Length - count ),
-					cancellationToken
-				).ConfigureAwait( false );
-				if ( read == 0 ) {
-					break;
+			var startPosition = stream.Position;
+			var probe = System.Buffers.ArrayPool<byte>.Shared.Rent(
+				BinaryProbeChunkLength
+			);
+			try {
+				var remaining = BinaryProbeLength;
+				while ( 0 < remaining ) {
+					cancellationToken.ThrowIfCancellationRequested();
+					var read = await stream.ReadAsync(
+						probe.AsMemory(
+							0,
+							Math.Min( BinaryProbeChunkLength, remaining )
+						),
+						cancellationToken
+					).ConfigureAwait( false );
+					if ( 0 == read ) {
+						return (stream, false);
+					}
+					if ( probe.AsSpan( 0, read ).Contains( (byte)0 ) ) {
+						return (stream, true);
+					}
+					remaining -= read;
 				}
-				count += read;
+				return (stream, false);
+			} finally {
+				System.Buffers.ArrayPool<byte>.Shared.Return(
+					probe,
+					clearArray: true
+				);
+				stream.Seek( startPosition, SeekOrigin.Begin );
 			}
-		} else {
-			count = await stream.ReadAsync( prefix, cancellationToken ).ConfigureAwait( false );
 		}
-		var isBinary = prefix.AsSpan( 0, count ).Contains( (byte)0 );
-		if ( stream.CanSeek ) {
-			stream.Seek( startPosition, SeekOrigin.Begin );
-			return (stream, isBinary);
-		}
+		var prefix = new byte[BinaryProbeLength];
+		var count = await stream.ReadAsync(
+			prefix,
+			cancellationToken
+		).ConfigureAwait( false );
 		return (
 			new PrefixReadStream( prefix.AsMemory( 0, count ), stream ),
-			isBinary
+			prefix.AsSpan( 0, count ).Contains( (byte)0 )
 		);
 	}
 
@@ -1385,7 +1488,7 @@ public static class Command {
 			}
 			lineNumber++;
 			var line = new LineRecord(
-				record.Content.ToArray(),
+				record.Content,
 				record.IsTerminated,
 				lineNumber,
 				byteOffset,
@@ -1400,7 +1503,14 @@ public static class Command {
 				}
 			}
 
-			var firstMatch = patterns.IsEmpty ? null : patterns.Find( record.Content, 0, context.CancellationToken );
+			PatternInput? patternInput = ( patterns.IsEmpty )
+				? null
+				: patterns.Prepare( record.Content, context.CancellationToken )
+			;
+			var firstMatch = ( patternInput is null )
+				? null
+				: patterns.Find( patternInput.Value, 0, context.CancellationToken )
+			;
 			var lineMatches = firstMatch is not null;
 			var selected = !selectionLimitReached
 				&& (options.InvertMatch ? !lineMatches : lineMatches);
@@ -1434,8 +1544,8 @@ public static class Command {
 						break;
 					}
 					if ( options.OnlyMatching ) {
-						if ( !options.InvertMatch ) {
-							var spans = patterns.FindAll( record.Content, context.CancellationToken );
+						if ( !options.InvertMatch && patternInput is not null ) {
+							var spans = patterns.FindAll( patternInput.Value, context.CancellationToken );
 							if ( spans.Count > 0 && !wroteRecordOutput ) {
 								await WriteInterSourceSeparatorAsync(
 									separateBeforeRecordOutput,
@@ -1476,6 +1586,7 @@ public static class Command {
 									false,
 									showFilename,
 									prefixFieldWidth,
+									null,
 									patterns,
 									options,
 									output,
@@ -1490,6 +1601,7 @@ public static class Command {
 							true,
 							showFilename,
 							prefixFieldWidth,
+							patternInput,
 							patterns,
 							options,
 							output,
@@ -1511,6 +1623,7 @@ public static class Command {
 					false,
 					showFilename,
 					prefixFieldWidth,
+					patternInput,
 					patterns,
 					options,
 					output,
@@ -1588,6 +1701,7 @@ public static class Command {
 		bool selected,
 		bool showFilename,
 		int prefixFieldWidth,
+		PatternInput? patternInput,
 		PatternSet patterns,
 		GrepOptions options,
 		ByteOutputStream output,
@@ -1616,8 +1730,15 @@ public static class Command {
 		var mayHighlightMatches = options.InvertMatch ? !selected : selected;
 		if ( options.ColorEnabled && mayHighlightMatches ) {
 			lineActive = await WriteColoredRecordContentAsync(
-				record.Content, patterns, options.ColorProfile.GetMatchStyle( options.InvertMatch ),
-				lineStyle, lineActive, options, output, cancellationToken
+				record.Content,
+				patternInput,
+				patterns,
+				options.ColorProfile.GetMatchStyle( options.InvertMatch ),
+				lineStyle,
+				lineActive,
+				options,
+				output,
+				cancellationToken
 			).ConfigureAwait( false );
 		} else {
 			await output.WriteAsync( record.Content, cancellationToken ).ConfigureAwait( false );
@@ -1647,7 +1768,7 @@ public static class Command {
 			true, showFilename, prefixFieldWidth, options, output, cancellationToken
 		).ConfigureAwait( false );
 		var active = await WriteColorStartAsync( options.ColorProfile.SelectedMatch, options, output, cancellationToken ).ConfigureAwait( false );
-		await output.WriteAsync( record.Content.AsMemory( span.Index, span.Length ), cancellationToken ).ConfigureAwait( false );
+		await output.WriteAsync( record.Content.Slice( span.Index, span.Length ), cancellationToken ).ConfigureAwait( false );
 		if ( active ) {
 			await WriteColorEndAsync( null, options, output, cancellationToken ).ConfigureAwait( false );
 		}
@@ -1658,7 +1779,8 @@ public static class Command {
 	}
 
 	private static async Task<bool> WriteColoredRecordContentAsync(
-		byte[] content,
+		ReadOnlyMemory<byte> content,
+		PatternInput? preparedInput,
 		PatternSet patterns,
 		string matchStyle,
 		string lineStyle,
@@ -1667,14 +1789,16 @@ public static class Command {
 		ByteOutputStream output,
 		CancellationToken cancellationToken
 	) {
-		var spans = patterns.FindAll( content, cancellationToken );
+		var patternInput = preparedInput
+			?? patterns.Prepare( content, cancellationToken );
+		var spans = patterns.FindAll( patternInput, cancellationToken );
 		var position = 0;
 		foreach ( var span in spans ) {
 			if ( span.Index > position ) {
-				await output.WriteAsync( content.AsMemory( position, span.Index - position ), cancellationToken ).ConfigureAwait( false );
+				await output.WriteAsync( content.Slice( position, span.Index - position ), cancellationToken ).ConfigureAwait( false );
 			}
 			var matchActive = await WriteColorStartAsync( matchStyle, options, output, cancellationToken ).ConfigureAwait( false );
-			await output.WriteAsync( content.AsMemory( span.Index, span.Length ), cancellationToken ).ConfigureAwait( false );
+			await output.WriteAsync( content.Slice( span.Index, span.Length ), cancellationToken ).ConfigureAwait( false );
 			position = span.Index + span.Length;
 			if ( matchActive ) {
 				var restore = position < content.Length ? lineStyle : null;
@@ -1683,7 +1807,7 @@ public static class Command {
 			}
 		}
 		if ( position < content.Length ) {
-			await output.WriteAsync( content.AsMemory( position ), cancellationToken ).ConfigureAwait( false );
+			await output.WriteAsync( content.Slice( position ), cancellationToken ).ConfigureAwait( false );
 		}
 		return lineActive;
 	}
