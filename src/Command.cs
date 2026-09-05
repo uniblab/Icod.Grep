@@ -73,7 +73,7 @@ public static class Command {
 	private sealed record PatternSource( PatternSourceKind Kind, string Value );
 	private sealed record MatchSpan( int Index, int Length );
 	private sealed record InputSource( string AccessPath, string DisplayName, bool IsStandardInput );
-	private sealed record LineRecord( byte[] Content, bool IsTerminated, long LineNumber, long ByteOffset, bool HasEncodingError );
+	private sealed record LineRecord( ReadOnlyMemory<byte> Content, bool IsTerminated, long LineNumber, long ByteOffset, bool HasEncodingError );
 	private sealed record SourceResult( bool HasSelectedRecord, bool StopCommand, bool WroteRecordOutput );
 	private sealed record PathRule( bool Include, PathnamePattern Pattern );
 	private readonly record struct PatternInput(
@@ -1488,7 +1488,7 @@ public static class Command {
 			}
 			lineNumber++;
 			var line = new LineRecord(
-				record.Content.ToArray(),
+				record.Content,
 				record.IsTerminated,
 				lineNumber,
 				byteOffset,
@@ -1757,7 +1757,7 @@ public static class Command {
 			true, showFilename, prefixFieldWidth, options, output, cancellationToken
 		).ConfigureAwait( false );
 		var active = await WriteColorStartAsync( options.ColorProfile.SelectedMatch, options, output, cancellationToken ).ConfigureAwait( false );
-		await output.WriteAsync( record.Content.AsMemory( span.Index, span.Length ), cancellationToken ).ConfigureAwait( false );
+		await output.WriteAsync( record.Content.Slice( span.Index, span.Length ), cancellationToken ).ConfigureAwait( false );
 		if ( active ) {
 			await WriteColorEndAsync( null, options, output, cancellationToken ).ConfigureAwait( false );
 		}
@@ -1768,7 +1768,7 @@ public static class Command {
 	}
 
 	private static async Task<bool> WriteColoredRecordContentAsync(
-		byte[] content,
+		ReadOnlyMemory<byte> content,
 		PatternSet patterns,
 		string matchStyle,
 		string lineStyle,
@@ -1782,10 +1782,10 @@ public static class Command {
 		var position = 0;
 		foreach ( var span in spans ) {
 			if ( span.Index > position ) {
-				await output.WriteAsync( content.AsMemory( position, span.Index - position ), cancellationToken ).ConfigureAwait( false );
+				await output.WriteAsync( content.Slice( position, span.Index - position ), cancellationToken ).ConfigureAwait( false );
 			}
 			var matchActive = await WriteColorStartAsync( matchStyle, options, output, cancellationToken ).ConfigureAwait( false );
-			await output.WriteAsync( content.AsMemory( span.Index, span.Length ), cancellationToken ).ConfigureAwait( false );
+			await output.WriteAsync( content.Slice( span.Index, span.Length ), cancellationToken ).ConfigureAwait( false );
 			position = span.Index + span.Length;
 			if ( matchActive ) {
 				var restore = position < content.Length ? lineStyle : null;
@@ -1794,7 +1794,7 @@ public static class Command {
 			}
 		}
 		if ( position < content.Length ) {
-			await output.WriteAsync( content.AsMemory( position ), cancellationToken ).ConfigureAwait( false );
+			await output.WriteAsync( content.Slice( position ), cancellationToken ).ConfigureAwait( false );
 		}
 		return lineActive;
 	}
