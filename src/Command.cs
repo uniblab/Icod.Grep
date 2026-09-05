@@ -1586,6 +1586,7 @@ public static class Command {
 									false,
 									showFilename,
 									prefixFieldWidth,
+									null,
 									patterns,
 									options,
 									output,
@@ -1600,6 +1601,7 @@ public static class Command {
 							true,
 							showFilename,
 							prefixFieldWidth,
+							patternInput,
 							patterns,
 							options,
 							output,
@@ -1621,6 +1623,7 @@ public static class Command {
 					false,
 					showFilename,
 					prefixFieldWidth,
+					patternInput,
 					patterns,
 					options,
 					output,
@@ -1698,6 +1701,7 @@ public static class Command {
 		bool selected,
 		bool showFilename,
 		int prefixFieldWidth,
+		PatternInput? patternInput,
 		PatternSet patterns,
 		GrepOptions options,
 		ByteOutputStream output,
@@ -1726,8 +1730,15 @@ public static class Command {
 		var mayHighlightMatches = options.InvertMatch ? !selected : selected;
 		if ( options.ColorEnabled && mayHighlightMatches ) {
 			lineActive = await WriteColoredRecordContentAsync(
-				record.Content, patterns, options.ColorProfile.GetMatchStyle( options.InvertMatch ),
-				lineStyle, lineActive, options, output, cancellationToken
+				record.Content,
+				patternInput,
+				patterns,
+				options.ColorProfile.GetMatchStyle( options.InvertMatch ),
+				lineStyle,
+				lineActive,
+				options,
+				output,
+				cancellationToken
 			).ConfigureAwait( false );
 		} else {
 			await output.WriteAsync( record.Content, cancellationToken ).ConfigureAwait( false );
@@ -1769,6 +1780,7 @@ public static class Command {
 
 	private static async Task<bool> WriteColoredRecordContentAsync(
 		ReadOnlyMemory<byte> content,
+		PatternInput? preparedInput,
 		PatternSet patterns,
 		string matchStyle,
 		string lineStyle,
@@ -1777,7 +1789,8 @@ public static class Command {
 		ByteOutputStream output,
 		CancellationToken cancellationToken
 	) {
-		var patternInput = patterns.Prepare( content, cancellationToken );
+		var patternInput = preparedInput
+			?? patterns.Prepare( content, cancellationToken );
 		var spans = patterns.FindAll( patternInput, cancellationToken );
 		var position = 0;
 		foreach ( var span in spans ) {
