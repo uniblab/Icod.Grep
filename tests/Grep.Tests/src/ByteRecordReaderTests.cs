@@ -19,11 +19,11 @@ public sealed class ByteRecordReaderTests {
 		var second = await reader.ReadAsync();
 		var end = await reader.ReadAsync();
 		Assert.NotNull( first );
-		Assert.Equal( "alpha"u8.ToArray(), first.Value.Content.ToArray() );
-		Assert.True( first.Value.IsTerminated );
+		Assert.Equal( "alpha"u8.ToArray(), first!.Content.ToArray() );
+		Assert.True( first.IsTerminated );
 		Assert.NotNull( second );
-		Assert.Equal( "beta"u8.ToArray(), second.Value.Content.ToArray() );
-		Assert.True( second.Value.IsTerminated );
+		Assert.Equal( "beta"u8.ToArray(), second!.Content.ToArray() );
+		Assert.True( second.IsTerminated );
 		Assert.Null( end );
 	}
 
@@ -42,9 +42,9 @@ public sealed class ByteRecordReaderTests {
 		Assert.NotNull( record );
 		Assert.Equal(
 			"abcdefghij"u8.ToArray(),
-			record.Value.Content.ToArray()
+			record!.Content.ToArray()
 		);
-		Assert.True( record.Value.IsTerminated );
+		Assert.True( record.IsTerminated );
 	}
 
 	/// <summary>Verifies empty, consecutive, and final unterminated records remain distinguishable.</summary>
@@ -62,14 +62,14 @@ public sealed class ByteRecordReaderTests {
 		var second = await reader.ReadAsync();
 		var third = await reader.ReadAsync();
 		Assert.NotNull( first );
-		Assert.Empty( first.Value.Content.ToArray() );
-		Assert.True( first.Value.IsTerminated );
+		Assert.Empty( first!.Content.ToArray() );
+		Assert.True( first.IsTerminated );
 		Assert.NotNull( second );
-		Assert.Empty( second.Value.Content.ToArray() );
-		Assert.True( second.Value.IsTerminated );
+		Assert.Empty( second!.Content.ToArray() );
+		Assert.True( second.IsTerminated );
 		Assert.NotNull( third );
-		Assert.Equal( "tail"u8.ToArray(), third.Value.Content.ToArray() );
-		Assert.False( third.Value.IsTerminated );
+		Assert.Equal( "tail"u8.ToArray(), third!.Content.ToArray() );
+		Assert.False( third.IsTerminated );
 	}
 
 	/// <summary>Verifies NUL-delimited records retain embedded newlines as data.</summary>
@@ -87,10 +87,10 @@ public sealed class ByteRecordReaderTests {
 		var first = await reader.ReadAsync();
 		var second = await reader.ReadAsync();
 		Assert.NotNull( first );
-		Assert.Equal( "a\nb"u8.ToArray(), first.Value.Content.ToArray() );
-		Assert.True( first.Value.IsTerminated );
+		Assert.Equal( "a\nb"u8.ToArray(), first!.Content.ToArray() );
+		Assert.True( first.IsTerminated );
 		Assert.NotNull( second );
-		Assert.Equal( "tail"u8.ToArray(), second.Value.Content.ToArray() );
-		Assert.True( second.Value.IsTerminated );
+		Assert.Equal( "tail"u8.ToArray(), second!.Content.ToArray() );
+		Assert.True( second.IsTerminated );
 	}
 }
