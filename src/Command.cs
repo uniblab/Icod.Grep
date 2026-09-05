@@ -19,6 +19,7 @@ using PCRE;
 public static class Command {
 	private const string VersionText = "grep (Icod.Grep) 1.6.0";
 	private const int BinaryProbeLength = 98_304;
+	private const int BinaryProbeChunkLength = 8_192;
 	private static readonly byte[] ColorReset = "\u001b[m"u8.ToArray();
 	private static readonly byte[] EraseLine = "\u001b[K"u8.ToArray();
 
@@ -1381,32 +1382,47 @@ public static class Command {
 		if ( options.NullData || options.BinaryFileMode == BinaryFileMode.Text ) {
 			return (stream, false);
 		}
-		var startPosition = stream.CanSeek ? stream.Position : 0L;
-		var prefix = new byte[BinaryProbeLength];
-		var count = 0;
 		if ( stream.CanSeek ) {
-			while ( count < prefix.Length ) {
-				cancellationToken.ThrowIfCancellationRequested();
-				var read = await stream.ReadAsync(
-					prefix.AsMemory( count, prefix.Length - count ),
-					cancellationToken
-				).ConfigureAwait( false );
-				if ( read == 0 ) {
-					break;
+			var startPosition = stream.Position;
+			var probe = System.Buffers.ArrayPool<byte>.Shared.Rent(
+				BinaryProbeChunkLength
+			);
+			try {
+				var remaining = BinaryProbeLength;
+				while ( 0 < remaining ) {
+					cancellationToken.ThrowIfCancellationRequested();
+					var read = await stream.ReadAsync(
+						probe.AsMemory(
+							0,
+							Math.Min( BinaryProbeChunkLength, remaining )
+						),
+						cancellationToken
+					).ConfigureAwait( false );
+					if ( 0 == read ) {
+						return (stream, false);
+					}
+					if ( probe.AsSpan( 0, read ).Contains( (byte)0 ) ) {
+						return (stream, true);
+					}
+					remaining -= read;
 				}
-				count += read;
+				return (stream, false);
+			} finally {
+				System.Buffers.ArrayPool<byte>.Shared.Return(
+					probe,
+					clearArray: true
+				);
+				stream.Seek( startPosition, SeekOrigin.Begin );
 			}
-		} else {
-			count = await stream.ReadAsync( prefix, cancellationToken ).ConfigureAwait( false );
 		}
-		var isBinary = prefix.AsSpan( 0, count ).Contains( (byte)0 );
-		if ( stream.CanSeek ) {
-			stream.Seek( startPosition, SeekOrigin.Begin );
-			return (stream, isBinary);
-		}
+		var prefix = new byte[BinaryProbeLength];
+		var count = await stream.ReadAsync(
+			prefix,
+			cancellationToken
+		).ConfigureAwait( false );
 		return (
 			new PrefixReadStream( prefix.AsMemory( 0, count ), stream ),
-			isBinary
+			prefix.AsSpan( 0, count ).Contains( (byte)0 )
 		);
 	}
 
