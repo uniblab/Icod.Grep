@@ -1,5 +1,7 @@
 [CmdletBinding()]
 param(
+    [string]$BaselineCommit = '423c0e9623100492fa01b6e4d14c183761d111d7',
+    [string]$BaselineLabel = 'baseline-1.5.0',
     [string]$Filter = '*',
     [string]$OutputDirectory = 'artifacts/performance/reference-comparison',
     [ValidateRange(1, 8)]
@@ -11,7 +13,6 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$baselineCommit = '423c0e9623100492fa01b6e4d14c183761d111d7'
 $repoRoot = (git rev-parse --show-toplevel).Trim()
 if (0 -ne $LASTEXITCODE -or [string]::IsNullOrWhiteSpace($repoRoot)) {
     throw 'Unable to resolve the repository root.'
@@ -48,18 +49,18 @@ try {
         throw 'Unable to resolve candidate commit.'
     }
 
-    git cat-file -e "$baselineCommit^{commit}" 2>$null
+    git cat-file -e "$BaselineCommit^{commit}" 2>$null
     if (0 -ne $LASTEXITCODE) {
-        git fetch origin $baselineCommit --depth=1
+        git fetch origin $BaselineCommit --depth=1
         if (0 -ne $LASTEXITCODE) {
-            throw 'Unable to fetch the pinned 1.5.0 baseline commit.'
+            throw "Unable to fetch baseline commit $BaselineCommit."
         }
     }
 
     $effectivePasses = if ($Smoke) { 1 } else { $Passes }
     $effectiveCooldownSeconds = if ($Smoke) { 0 } else { $CooldownSeconds }
     $totalRuns = 2 * $effectivePasses
-    Write-IcodProgressLine "Reference comparison starting. Filter='$Filter'; passes=$effectivePasses; benchmark runs=$totalRuns; cooldown=${effectiveCooldownSeconds}s."
+    Write-IcodProgressLine "Reference comparison starting. Baseline='$BaselineLabel' ($($BaselineCommit.Substring(0, 7))); filter='$Filter'; passes=$effectivePasses; benchmark runs=$totalRuns; cooldown=${effectiveCooldownSeconds}s."
     if (-not $Smoke) {
         Write-IcodProgressLine 'BenchmarkDotNet may spend several minutes inside each run without returning to the PowerShell prompt. This is expected.'
     }
@@ -80,10 +81,10 @@ try {
     $baselineRoot = Join-Path $temporaryRoot 'baseline'
     New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 
-    Write-IcodProgressLine 'Preparing pinned Icod.Grep 1.5.0 worktree.'
-    git worktree add --detach $baselineRoot $baselineCommit
+    Write-IcodProgressLine "Preparing $BaselineLabel worktree."
+    git worktree add --detach $baselineRoot $BaselineCommit
     if (0 -ne $LASTEXITCODE) {
-        throw 'Unable to create the pinned 1.5.0 baseline worktree.'
+        throw "Unable to create the $BaselineLabel worktree."
     }
 
     try {
@@ -205,7 +206,7 @@ try {
             }
         }
 
-        Initialize-IcodBenchmarkVariant -Root $baselineRoot -Label 'baseline-1.5.0'
+        Initialize-IcodBenchmarkVariant -Root $baselineRoot -Label $BaselineLabel
         Initialize-IcodBenchmarkVariant -Root $repoRoot -Label 'candidate'
 
         $sequence = New-Object System.Collections.Generic.List[object]
@@ -215,11 +216,11 @@ try {
             if (0 -eq ($pass % 2)) {
                 $variants = @(
                     [PSCustomObject]@{ Root = $repoRoot; Label = 'candidate'; Commit = $candidateCommit },
-                    [PSCustomObject]@{ Root = $baselineRoot; Label = 'baseline-1.5.0'; Commit = $baselineCommit }
+                    [PSCustomObject]@{ Root = $baselineRoot; Label = $BaselineLabel; Commit = $BaselineCommit }
                 )
             } else {
                 $variants = @(
-                    [PSCustomObject]@{ Root = $baselineRoot; Label = 'baseline-1.5.0'; Commit = $baselineCommit },
+                    [PSCustomObject]@{ Root = $baselineRoot; Label = $BaselineLabel; Commit = $BaselineCommit },
                     [PSCustomObject]@{ Root = $repoRoot; Label = 'candidate'; Commit = $candidateCommit }
                 )
             }
@@ -245,7 +246,7 @@ try {
 
         $comparison = [PSCustomObject]@{
             SchemaVersion = 3
-            BaselineCommit = $baselineCommit
+            BaselineCommit = $BaselineCommit
             CandidateCommit = $candidateCommit
             Filter = $Filter
             Smoke = [bool]$Smoke
@@ -264,7 +265,7 @@ try {
 
         Write-IcodProgressLine "Reference comparison complete. Results: $outputRoot"
     } finally {
-        Write-IcodProgressLine 'Removing temporary 1.5.0 worktree.'
+        Write-IcodProgressLine "Removing temporary $BaselineLabel worktree."
         git worktree remove --force $baselineRoot 2>$null
         Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
