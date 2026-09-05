@@ -68,7 +68,7 @@ internal sealed class ByteRecordReader : IDisposable {
 }
 
 /// <summary>Represents one independently owned grep record.</summary>
-internal readonly record struct GrepByteRecord(
+internal sealed record GrepByteRecord(
 	ReadOnlyMemory<byte> Content,
 	bool IsTerminated
 );
