@@ -1487,12 +1487,14 @@ public static class Command {
 				}
 			}
 
-			var patternInput = patterns.IsEmpty
+			PatternInput? patternInput = ( patterns.IsEmpty )
 				? null
-				: patterns.Prepare( record.Content, context.CancellationToken );
-			var firstMatch = patternInput is null
+				: patterns.Prepare( record.Content, context.CancellationToken )
+			;
+			var firstMatch = ( patternInput is null )
 				? null
-				: patterns.Find( patternInput.Value, 0, context.CancellationToken );
+				: patterns.Find( patternInput.Value, 0, context.CancellationToken )
+			;
 			var lineMatches = firstMatch is not null;
 			var selected = !selectionLimitReached
 				&& (options.InvertMatch ? !lineMatches : lineMatches);
