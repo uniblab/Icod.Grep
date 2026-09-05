@@ -40,6 +40,16 @@
     "utf8": false
   },
   {
+    "name": "fixed-1",
+    "matcher": "fixed",
+    "recordCount": 8192,
+    "recordLength": 96,
+    "matchEvery": 257,
+    "patternCount": 1,
+    "pattern": "TARGET",
+    "utf8": false
+  },
+  {
     "name": "fixed-100",
     "matcher": "fixed",
     "recordCount": 8192,
