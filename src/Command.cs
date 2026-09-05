@@ -75,6 +75,10 @@ public static class Command {
 	private sealed record LineRecord( byte[] Content, bool IsTerminated, long LineNumber, long ByteOffset, bool HasEncodingError );
 	private sealed record SourceResult( bool HasSelectedRecord, bool StopCommand, bool WroteRecordOutput );
 	private sealed record PathRule( bool Include, PathnamePattern Pattern );
+	private sealed record PatternInput(
+		ReadOnlyMemory<byte> Source,
+		RegularExpressionPreparedByteInput? Prepared
+	);
 
 	private sealed class GrepOptions {
 		public PatternMode PatternMode { get; set; } = PatternMode.Basic;
@@ -176,7 +180,11 @@ public static class Command {
 	}
 
 	private interface IGrepPattern {
-		MatchSpan? Find( ReadOnlyMemory<byte> input, int startOffset, CancellationToken cancellationToken );
+		MatchSpan? Find(
+			PatternInput input,
+			int startOffset,
+			CancellationToken cancellationToken
+		);
 	}
 
 	private sealed class RegularExpressionPattern : IGrepPattern {
@@ -191,13 +199,26 @@ public static class Command {
 			this.inputOptions = inputOptions;
 		}
 
-		public MatchSpan? Find( ReadOnlyMemory<byte> input, int startOffset, CancellationToken cancellationToken ) {
-			var result = this.expression.Match(
-				input,
-				this.inputOptions,
-				new RegularExpressionByteMatchOptions { StartByteOffset = startOffset },
-				cancellationToken
-			);
+		public MatchSpan? Find(
+			PatternInput input,
+			int startOffset,
+			CancellationToken cancellationToken
+		) {
+			var matchOptions = new RegularExpressionByteMatchOptions {
+				StartByteOffset = startOffset
+			};
+			var result = input.Prepared is null
+				? this.expression.Match(
+					input.Source,
+					this.inputOptions,
+					matchOptions,
+					cancellationToken
+				)
+				: this.expression.Match(
+					input.Prepared,
+					matchOptions,
+					cancellationToken
+				);
 			if ( !result.IsSuccess ) {
 				throw new InvalidOperationException( result.Diagnostic?.Message ?? "regular-expression matching failed" );
 			}
@@ -236,15 +257,15 @@ public static class Command {
 		}
 
 		public MatchSpan? Find(
-			ReadOnlyMemory<byte> input,
+			PatternInput input,
 			int startOffset,
 			CancellationToken cancellationToken
 		) {
 			cancellationToken.ThrowIfCancellationRequested();
-			if ( startOffset < 0 || startOffset > input.Length ) {
+			if ( startOffset < 0 || startOffset > input.Source.Length ) {
 				return null;
 			}
-			var match = this.expression.Match( input.Span, startOffset );
+			var match = this.expression.Match( input.Source.Span, startOffset );
 			cancellationToken.ThrowIfCancellationRequested();
 			return match.Success ? new MatchSpan( match.Index, match.Length ) : null;
 		}
@@ -272,17 +293,21 @@ public static class Command {
 			this.decodingMode = decodingMode;
 		}
 
-		public MatchSpan? Find( ReadOnlyMemory<byte> input, int startOffset, CancellationToken cancellationToken ) {
+		public MatchSpan? Find(
+			PatternInput input,
+			int startOffset,
+			CancellationToken cancellationToken
+		) {
 			cancellationToken.ThrowIfCancellationRequested();
-			if ( startOffset < 0 || startOffset > input.Length ) {
+			if ( startOffset < 0 || startOffset > input.Source.Length ) {
 				return null;
 			}
 			if ( this.pattern.Length == 0 ) {
 				return new MatchSpan( startOffset, 0 );
 			}
 			return this.ignoreCase
-				? this.FindIgnoringCase( input.Span, startOffset, cancellationToken )
-				: this.FindOrdinal( input.Span, startOffset, cancellationToken );
+				? this.FindIgnoringCase( input.Source.Span, startOffset, cancellationToken )
+				: this.FindOrdinal( input.Source.Span, startOffset, cancellationToken );
 		}
 
 		private MatchSpan? FindIgnoringCase(
@@ -345,33 +370,54 @@ public static class Command {
 		private readonly bool lineRegexp;
 		private readonly IRegularExpressionCharacterClassProvider characterClassProvider;
 		private readonly TextDecodingMode decodingMode;
+		private readonly RegularExpressionInputOptions? preparedInputOptions;
 
 		public PatternSet(
 			IReadOnlyList<IGrepPattern> patterns,
 			bool wordRegexp,
 			bool lineRegexp,
 			IRegularExpressionCharacterClassProvider characterClassProvider,
-			TextDecodingMode decodingMode
+			TextDecodingMode decodingMode,
+			RegularExpressionInputOptions? preparedInputOptions = null
 		) {
 			this.patterns = patterns;
 			this.wordRegexp = wordRegexp;
 			this.lineRegexp = lineRegexp;
 			this.characterClassProvider = characterClassProvider;
 			this.decodingMode = decodingMode;
+			this.preparedInputOptions = preparedInputOptions;
 		}
 
 		public bool IsEmpty => this.patterns.Count == 0;
 
-		public MatchSpan? Find( ReadOnlyMemory<byte> input, int startOffset, CancellationToken cancellationToken ) {
+		public PatternInput Prepare(
+			ReadOnlyMemory<byte> input,
+			CancellationToken cancellationToken
+		) {
+			var prepared = this.preparedInputOptions is null
+				? null
+				: RegularExpressionPreparedByteInput.Prepare(
+					input,
+					this.preparedInputOptions,
+					cancellationToken
+				);
+			return new PatternInput( input, prepared );
+		}
+
+		public MatchSpan? Find(
+			PatternInput input,
+			int startOffset,
+			CancellationToken cancellationToken
+		) {
 			MatchSpan? best = null;
 			foreach ( var pattern in this.patterns ) {
 				var searchOffset = startOffset;
-				while ( searchOffset <= input.Length ) {
+				while ( searchOffset <= input.Source.Length ) {
 					var candidate = pattern.Find( input, searchOffset, cancellationToken );
 					if ( candidate is null ) {
 						break;
 					}
-					if ( this.Accepts( input.Span, candidate ) ) {
+					if ( this.Accepts( input.Source.Span, candidate ) ) {
 						if (
 							best is null
 							|| candidate.Index < best.Index
@@ -381,19 +427,22 @@ public static class Command {
 						}
 						break;
 					}
-					if ( candidate.Index >= input.Length ) {
+					if ( candidate.Index >= input.Source.Length ) {
 						break;
 					}
-					searchOffset = AdvanceAfter( input.Span, candidate );
+					searchOffset = AdvanceAfter( input.Source.Span, candidate );
 				}
 			}
 			return best;
 		}
 
-		public IReadOnlyList<MatchSpan> FindAll( ReadOnlyMemory<byte> input, CancellationToken cancellationToken ) {
+		public IReadOnlyList<MatchSpan> FindAll(
+			PatternInput input,
+			CancellationToken cancellationToken
+		) {
 			var output = new List<MatchSpan>();
 			var offset = 0;
-			while ( offset <= input.Length ) {
+			while ( offset <= input.Source.Length ) {
 				var match = this.Find( input, offset, cancellationToken );
 				if ( match is null ) {
 					break;
@@ -401,10 +450,10 @@ public static class Command {
 				if ( match.Length > 0 ) {
 					output.Add( match );
 				}
-				if ( match.Index >= input.Length ) {
+				if ( match.Index >= input.Source.Length ) {
 					break;
 				}
-				offset = AdvanceAfter( input.Span, match );
+				offset = AdvanceAfter( input.Source.Span, match );
 			}
 			return output;
 		}
@@ -503,7 +552,7 @@ public static class Command {
 	/// <param name="standardInput">The standard-input reader.</param>
 	/// <param name="standardOutput">The standard-output writer.</param>
 	/// <param name="standardError">The standard-error writer.</param>
-	/// <returns>The GNU grep exit status: 0 for a selected result, 1 for none, or 2 for an error.</returns>
+	/// <returns>The GNU grep exit status: 0 for a selected result, 1 if none is selected, or 2 on error.</returns>
 	public static int Run(
 		string[] args,
 		TextReader? standardInput = null,
@@ -994,10 +1043,10 @@ public static class Command {
 				} catch ( Exception exception ) when (
 					exception is IOException
 						or DecoderFallbackException
-					or UnauthorizedAccessException
-					or System.Security.SecurityException
-					or ArgumentException
-					or NotSupportedException
+						or UnauthorizedAccessException
+						or System.Security.SecurityException
+						or ArgumentException
+						or NotSupportedException
 				) {
 					await ReportErrorAsync( options, context, string.Concat( source.Value, ": ", exception.Message ) ).ConfigureAwait( false );
 					return null;
@@ -1081,7 +1130,8 @@ public static class Command {
 			options.WordRegexp,
 			options.LineRegexp,
 			characterClassProvider,
-			options.Locale.DecodingMode
+			options.Locale.DecodingMode,
+			inputOptions
 		);
 	}
 
@@ -1400,7 +1450,12 @@ public static class Command {
 				}
 			}
 
-			var firstMatch = patterns.IsEmpty ? null : patterns.Find( record.Content, 0, context.CancellationToken );
+			var patternInput = patterns.IsEmpty
+				? null
+				: patterns.Prepare( record.Content, context.CancellationToken );
+			var firstMatch = patternInput is null
+				? null
+				: patterns.Find( patternInput, 0, context.CancellationToken );
 			var lineMatches = firstMatch is not null;
 			var selected = !selectionLimitReached
 				&& (options.InvertMatch ? !lineMatches : lineMatches);
@@ -1434,8 +1489,8 @@ public static class Command {
 						break;
 					}
 					if ( options.OnlyMatching ) {
-						if ( !options.InvertMatch ) {
-							var spans = patterns.FindAll( record.Content, context.CancellationToken );
+						if ( !options.InvertMatch && patternInput is not null ) {
+							var spans = patterns.FindAll( patternInput, context.CancellationToken );
 							if ( spans.Count > 0 && !wroteRecordOutput ) {
 								await WriteInterSourceSeparatorAsync(
 									separateBeforeRecordOutput,
@@ -1667,7 +1722,8 @@ public static class Command {
 		ByteOutputStream output,
 		CancellationToken cancellationToken
 	) {
-		var spans = patterns.FindAll( content, cancellationToken );
+		var patternInput = patterns.Prepare( content, cancellationToken );
+		var spans = patterns.FindAll( patternInput, cancellationToken );
 		var position = 0;
 		foreach ( var span in spans ) {
 			if ( span.Index > position ) {
