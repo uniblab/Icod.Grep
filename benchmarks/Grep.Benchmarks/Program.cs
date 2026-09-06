@@ -18,6 +18,22 @@ public static class Program {
 			}
 			return StressHarness.RunSmoke( outputPath );
 		}
+		if ( 0 < args.Length && "--stress-profile" == args[ 0 ] ) {
+			if ( 2 > args.Length ) {
+				Console.Error.WriteLine(
+					"--stress-profile requires one of: records, files, patterns, reference."
+				);
+				return 1;
+			}
+			string? outputPath = null;
+			if ( 2 < args.Length ) {
+				outputPath = args[ 2 ];
+			}
+			return StressScalingHarness.Run(
+				args[ 1 ],
+				outputPath
+			);
+		}
 		if ( 1 < args.Length && "--metadata" == args[ 0 ] ) {
 			BenchmarkMetadata.Write(
 				args[ 1 ]
