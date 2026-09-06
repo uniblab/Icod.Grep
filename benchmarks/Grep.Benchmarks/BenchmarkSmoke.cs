@@ -42,22 +42,66 @@ internal static class BenchmarkSmoke {
 							"' but received '",
 							actual.Trim(),
 							"'."
-						)
-					);
+					)
+				);
 				}
 			}
+
+			ValidateUtf8PcrePropertyWorkload();
 
 			Console.WriteLine(
 				string.Concat(
 					"T6 benchmark smoke passed for ",
 					ScenarioCatalog.All.Count.ToString( CultureInfo.InvariantCulture ),
-					" scenarios."
+					" scenarios plus the UTF-8 PCRE property control."
 				)
 			);
 			return 0;
 		} catch ( Exception exception ) {
 			Console.Error.WriteLine( exception.Message );
 			return 1;
+		}
+	}
+
+	private static void ValidateUtf8PcrePropertyWorkload() {
+		var previousLcAll = Environment.GetEnvironmentVariable( "LC_ALL" );
+		try {
+			Environment.SetEnvironmentVariable( "LC_ALL", "C.UTF-8" );
+			var result = RunCommand(
+				[ "-P", "-c", "\\p{L}+ 世界" ],
+				"Καλημέρα 世界 TARGET payload\nΚαλημέρα ordinary payload\n"u8.ToArray()
+			);
+			if ( CommandExitCodes.Success != result.Status ) {
+				throw new InvalidOperationException(
+					string.Concat(
+						"UTF-8 PCRE property smoke failed with status ",
+						result.Status.ToString( CultureInfo.InvariantCulture ),
+						". Diagnostic: ",
+						result.Error
+					)
+				);
+			}
+			var actual = System.Text.Encoding.UTF8.GetString(
+				result.Output
+			).ReplaceLineEndings( Environment.NewLine );
+			var expected = string.Concat(
+				"1",
+				Environment.NewLine
+			);
+			if ( !string.Equals( expected, actual, StringComparison.Ordinal ) ) {
+				throw new InvalidOperationException(
+					string.Concat(
+						"UTF-8 PCRE property smoke expected count '1' but received '",
+						actual.Trim(),
+						"'."
+					)
+				);
+			}
+		} finally {
+			Environment.SetEnvironmentVariable(
+				"LC_ALL",
+				previousLcAll
+			);
 		}
 	}
 
