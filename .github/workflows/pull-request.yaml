@@ -82,6 +82,8 @@ jobs:
         run: dotnet build benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c ${{ env.CONFIGURATION }} --no-restore -p:ContinuousIntegrationBuild=true
       - name: Run deterministic benchmark smoke
         run: dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c ${{ env.CONFIGURATION }} --no-build --no-restore -- --smoke
+      - name: Run deterministic stress smoke
+        run: dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c ${{ env.CONFIGURATION }} --no-build --no-restore -- --stress-smoke artifacts/performance/stress-smoke-${{ matrix.name }}.json
       - name: Validate pinned 1.5.0 comparison orchestration
         if: matrix.name == 'Windows'
         shell: pwsh
