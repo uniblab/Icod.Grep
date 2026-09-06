@@ -18,6 +18,13 @@ public static class Program {
 			}
 			return StressHarness.RunSmoke( outputPath );
 		}
+		if ( 0 < args.Length && "--stress-resilience" == args[ 0 ] ) {
+			string? outputPath = null;
+			if ( 1 < args.Length ) {
+				outputPath = args[ 1 ];
+			}
+			return StressResilienceHarness.Run( outputPath );
+		}
 		if ( 0 < args.Length && "--stress-profile" == args[ 0 ] ) {
 			if ( 2 > args.Length ) {
 				Console.Error.WriteLine(
