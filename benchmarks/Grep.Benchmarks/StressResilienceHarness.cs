@@ -696,7 +696,7 @@ internal static class StressResilienceHarness {
 		(int Status, string Error) result
 	) {
 		ArgumentException.ThrowIfNullOrWhiteSpace( scenario );
-		if ( CommandExitCodes.Error != result.Status ) {
+		if ( CommandExitCodes.UsageError != result.Status ) {
 			throw new InvalidOperationException(
 				string.Concat(
 					scenario,
