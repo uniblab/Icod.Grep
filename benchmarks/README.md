@@ -1,84 +1,120 @@
-# Icod.Grep T6 performance benchmarks
+# Icod.Grep T6 performance and scalability harness
 
-This directory contains the measurement infrastructure for the `1.6.0` T6 performance and scalability tranche.
-
-## T6.0 status
-
-The benchmark foundation is implemented and its deterministic smoke has passed on GitHub-hosted Windows, Linux, and macOS. The development version surfaces are synchronized to `1.6.0` while the comparison script pins the immutable `1.5.0` merge commit as the baseline.
-
-The first physical-reference pilot was collected on September 2, 2026. It successfully established that allocation measurements are highly repeatable, but it also exposed substantial run-order/timing variance despite there being no production search-code difference between the pinned `1.5.0` baseline and the pilot `1.6.0` candidate beyond version metadata. The reference protocol was therefore strengthened before accepting timing results as optimization evidence.
-
-T6.0 remains measurement-first: production hot-path optimization must not begin until the stabilized comparison identifies the bottlenecks worth attacking.
+This directory contains the measurement and stress infrastructure used to develop and validate `Icod.Grep 1.6.0`.
 
 ## Measurement policy
 
-The authoritative quantitative series is collected on the physical Windows reference laptop documented by the repository's `hardware_inventory.txt`. The inventory itself is **not copied into benchmark artifacts**. Reports record only the inventory filename and SHA-256 digest so a result can be tied to the reference-machine declaration without duplicating serial numbers or other machine-specific inventory fields.
+The governing rule for T6 is:
 
-GitHub-hosted Windows, Linux, and macOS measurements are diagnostic only. They prove portability and can reveal gross regressions, but they are not used for narrow percentage claims or a cross-platform aggregate score.
+> Measure first. Optimize second. Preserve behavior always.
+
+Narrow percentage claims come from repeated measurements on the established physical Windows reference host identified by `hardware_inventory.txt`. Benchmark artifacts record only its SHA-256 digest. GitHub-hosted Windows, Linux, and macOS runs are correctness, portability, orchestration, and smoke gates; their timings are not treated as authoritative physical performance results.
+
+The immutable `1.5.0` baseline commit is:
+
+```text
+423c0e9623100492fa01b6e4d14c183761d111d7
+```
 
 ## Benchmark project
 
-`Grep.Benchmarks/Icod.Grep.Benchmarks.csproj` is intentionally outside `Icod.Grep.sln` and is not packable. Normal tool builds and NuGet packaging therefore do not acquire BenchmarkDotNet or benchmark sources.
+`Grep.Benchmarks/Icod.Grep.Benchmarks.csproj` is intentionally outside `Icod.Grep.sln` and is not packable. Production packages therefore do not acquire BenchmarkDotNet or benchmark sources.
 
-The source-controlled `scenarios.json` catalog describes deterministic command workloads. The first T6.0 catalog covers:
+The project contains:
 
-- sparse and dense ASCII records;
-- UTF-8 multilingual records;
-- multi-MiB long-line pressure;
-- fixed-string pattern-count scaling at 100 and 1,000 patterns; and
-- PCRE lookbehind.
+- `CommandBenchmarks` for complete in-process parse/compile/search/count workloads;
+- `FileCommandBenchmarks` for large-file, many-small-file, and recursive-tree workloads;
+- `RecordReaderBenchmarks` for record-pipeline controls;
+- focused fixed-string, output/color, PCRE, and component benchmark groups added during T6;
+- deterministic benchmark smoke;
+- deterministic T6.8 stress smoke;
+- explicit T6.8 physical scaling profiles; and
+- explicit sustained cancellation/output-resilience profiles.
 
-`CommandBenchmarks` exercises the complete in-process command parse/compile/search/count path without process-startup noise. `FileCommandBenchmarks` exercises large-file, many-small-file, and recursive-tree workloads. `RecordReaderBenchmarks` separately measures the shared materializing record reader for short through long records.
+## Deterministic smoke
 
-## Fast smoke
-
-Run the deterministic, non-statistical smoke from the repository root:
+From the repository root:
 
 ```powershell
 dotnet restore benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj
+```
+
+```powershell
 dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Staging -- --smoke
 ```
 
-The PR workflow runs this smoke on Windows, Linux, and macOS. It validates scenario generation and expected grep results; it does not establish performance numbers.
-
-## Hosted diagnostic benchmarks
-
-The manual `performance-diagnostics.yaml` workflow runs BenchmarkDotNet on hosted Windows, Linux, and macOS runners and uploads the results plus metadata. Those measurements are observational.
-
-Locally, a normal BenchmarkDotNet run can be filtered in the usual way, for example:
-
-```powershell
-dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release -- --filter "*CommandBenchmarks*"
-```
+The PR workflow runs the benchmark and stress smokes on Windows, Linux, and macOS. They validate scenario generation and expected command behavior; they are not statistical performance gates.
 
 ## Authoritative 1.5.0 → candidate comparison
 
-On the physical Windows reference laptop, use:
+`Collect-ReferenceComparison.ps1` is the authoritative whole-suite physical comparison collector.
+
+The default protocol:
+
+1. requires a clean candidate worktree apart from generated root-level `T6.*.zip` bundles;
+2. pins the immutable `1.5.0` baseline commit;
+3. creates the baseline under a short `%TEMP%` worktree path to avoid Windows long-path cleanup failures;
+4. overlays the **current benchmark harness** onto the baseline so both variants use identical measurement code;
+5. restores/builds each variant once in Release;
+6. runs two alternating ABBA passes: baseline → candidate → candidate → baseline;
+7. waits 30 seconds between variants by default;
+8. runs the complete benchmark suite by default;
+9. writes each pass beneath `artifacts/performance/reference-comparison/`;
+10. records exact commits, ordered run sequence, cooldown, filter, and hardware-inventory hash in `comparison.json`; and
+11. removes or prunes the temporary baseline worktree after collection.
+
+The final T6.9 release-closure invocation is:
 
 ```powershell
-./benchmarks/Collect-ReferenceComparison.ps1
+powershell .\benchmarks\Collect-ReferenceComparison.ps1 -BaselineCommit '423c0e9623100492fa01b6e4d14c183761d111d7' -BaselineLabel 'baseline-1.5.0' -Filter '*' -OutputDirectory 'artifacts/performance/T6.9-final-reference' -Passes 2 -CooldownSeconds 30
 ```
 
-The default authoritative protocol now:
+Timing is interpreted conservatively because the physical baseline work established measurable run-order/noise effects. Managed allocation is substantially more repeatable and is the primary signal for small resource deltas.
 
-1. requires a clean candidate worktree by default;
-2. creates a detached worktree at the pinned `1.5.0` merge commit;
-3. copies the **current benchmark harness** into that baseline worktree so baseline and candidate use identical benchmark code;
-4. restores/builds each variant once;
-5. runs two alternating passes in ABBA order: baseline → candidate → candidate → baseline;
-6. waits 30 seconds between benchmark variants by default to reduce immediate thermal/run-order coupling;
-7. runs all benchmark classes by default, including the record-reader microbenchmarks;
-8. writes each pass to a separate result directory beneath `artifacts/performance/reference-comparison/`;
-9. writes separate metadata files plus an ordered comparison manifest;
-10. records the SHA-256 digest of `hardware_inventory.txt`, not its contents; and
-11. removes the temporary baseline worktree.
+## T6.8 physical scaling
 
-Use `-Filter` to narrow the benchmark group, `-Passes` to increase the number of alternating passes, and `-CooldownSeconds` to change the interval between variants. Do not compare results gathered under materially different power, thermal, runtime, or workload conditions as though they were one series.
+`Collect-StressReference.ps1` collects the explicit physical S1-S3 scaling profiles:
 
-### Pilot finding
+- `records` — 1/16/64 MiB single records across fixed/BRE/ERE/PCRE plus fixed short-record files through 1 GiB;
+- `files` — deterministic nested trees through 50,000 files; and
+- `patterns` — fixed sets through 10,000 and BRE/ERE/PCRE sets through 1,000.
 
-The initial one-pass reference run is retained as a measurement-methodology finding, not as a performance regression result. Baseline and candidate production search behavior were effectively identical, yet wall-clock deltas ranged from about **+66% to -29%** depending on the scenario. Allocation values, by contrast, were essentially identical between variants.
+Example focused collection:
 
-The stable allocation data also exposed a likely optimization priority: managed BRE/ERE command workloads allocate hundreds of megabytes on roughly megabyte-scale inputs, while analogous fixed-string workloads allocate only a few megabytes. Long-line and large-file BRE cases likewise show multi-gigabyte allocations. This suggests the managed regex/search path deserves focused profiling once the stabilized timing series is collected.
+```powershell
+powershell .\benchmarks\Collect-StressReference.ps1 -Profiles records -OutputDirectory 'artifacts/performance/T6.8-records' -CooldownSeconds 0
+```
 
-T6 optimization work does not begin until the strengthened reference protocol has produced a credible series and identified the measured bottlenecks worth addressing.
+The initial S1 run exposed approximately 23× input-size cumulative managed allocation for very large BRE/ERE byte-mode records. The root cause was corrected in `Icod.CommandFramework 2.2.1`; the Grep consumer rerun reduced 64 MiB BRE/ERE allocation by about 39% and brought amplification to approximately 14× while retaining linear growth.
+
+## T6.8 resilience
+
+`Collect-StressResilience.ps1` collects sustained S4/S5 operational behavior on the physical reference host.
+
+```powershell
+powershell .\benchmarks\Collect-StressResilience.ps1 -OutputDirectory 'artifacts/performance/T6.8-resilience'
+```
+
+The accepted run covers:
+
+- cancellation during a 64 MiB BRE record;
+- cancellation with 1,000 BRE patterns;
+- cancellation during 10,000-file recursive traversal;
+- cancellation during output-heavy operation;
+- sustained delayed output through a zero-retention counting sink;
+- deterministic write failure; and
+- deterministic flush/completion failure.
+
+All accepted S4 cancellation cases completed within the 2-second operational deadline. Backpressure remained bounded, and write/flush failures returned the controlled grep error status.
+
+## Current status
+
+T6.0 through T6.8 are closed. The remaining work is **T6.9 release closure**:
+
+1. final whole-suite physical comparison against `1.5.0`;
+2. residual-regression review;
+3. final documentation and package metadata consolidation;
+4. package/distribution workflow audit; and
+5. merge/publish readiness decision for `Icod.Grep 1.6.0`.
+
+Retained tranche/candidate/closure reports at the repository root are the authoritative quantitative record for individual optimizations.
