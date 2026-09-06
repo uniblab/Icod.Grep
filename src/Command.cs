@@ -237,7 +237,7 @@ public static class Command {
 			bool ignoreCase,
 			GrepLocaleProfile locale
 		) {
-			var options = PcreOptions.None;
+			var options = PcreOptions.Compiled;
 			var extraOptions = PcreExtraCompileOptions.None;
 			if ( ignoreCase ) {
 				options |= PcreOptions.Caseless;
