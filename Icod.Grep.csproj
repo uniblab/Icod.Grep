@@ -33,7 +33,7 @@
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
 		<PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
 		<PackageRequireLicenseAcceptance>True</PackageRequireLicenseAcceptance>
-		<PackageReleaseNotes>Develops the 1.6.0 T6 performance and scalability tranche: establishes a reproducible BenchmarkDotNet harness, deterministic corpora, reference-host metadata, a pinned 1.5.0 comparison workflow, and cross-platform benchmark smoke before production hot-path optimization begins.</PackageReleaseNotes>
+		<PackageReleaseNotes>1.6.0 delivers the measured T6 performance and scalability tranche: prepared-input reuse and Icod.CommandFramework 2.2.1 integration for substantially lower BRE/ERE allocation, Aho-Corasick-style fixed multi-pattern matching, segmented large-record processing, bounded binary probing, reduced filesystem buffering, lower color/output-path allocation, PCRE2 JIT, and explicit stress/resilience validation through 64 MiB records, 1 GiB files, 50,000-file trees, large pattern sets, cancellation, backpressure, and controlled output failure. GNU grep 3.12 compatibility and existing command semantics are preserved.</PackageReleaseNotes>
 		<PackageTags>grep;gnu-grep;gnu;search;text-search;regex;regular-expression;cli;command-line;tool;dotnet-tool;icod;posix;bre;ere;pcre;pcre2;perl-regexp;fixed-strings;recursive-search;cross-platform;net10;dotnet</PackageTags>
 		<PackageIcon>icon.png</PackageIcon>
 	</PropertyGroup>
