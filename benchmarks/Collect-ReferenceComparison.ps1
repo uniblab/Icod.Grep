@@ -13,6 +13,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
 $repoRoot = (git rev-parse --show-toplevel).Trim()
 if (0 -ne $LASTEXITCODE -or [string]::IsNullOrWhiteSpace($repoRoot)) {
     throw 'Unable to resolve the repository root.'
@@ -20,27 +21,27 @@ if (0 -ne $LASTEXITCODE -or [string]::IsNullOrWhiteSpace($repoRoot)) {
 
 function Write-IcodProgressLine {
     param(
-        [Parameter(Mandatory)]
+        [Parameter(Mandatory = $true)]
         [string]$Message
     )
 
-    Write-Host (
-        '[{0}] {1}' -f (
-            [DateTimeOffset]::Now.ToString('HH:mm:ss'),
-            $Message
-        )
-    )
+    Write-Host ('[{0}] {1}' -f [DateTimeOffset]::Now.ToString('HH:mm:ss'), $Message)
 }
 
 Push-Location $repoRoot
 try {
     if (-not $AllowDirty) {
-        $dirty = @(git status --porcelain)
+        [object[]]$status = @(git status --porcelain --untracked-files=all)
         if (0 -ne $LASTEXITCODE) {
             throw 'Unable to inspect repository status.'
         }
-        if (0 -lt $dirty.Count) {
-            throw 'The authoritative reference comparison requires a clean worktree. Commit/stash changes or use -AllowDirty for an explicitly non-authoritative run.'
+        [object[]]$dirty = @(
+            $status | Where-Object {
+                $_ -notmatch '^\?\? T6\..*\.zip$'
+            }
+        )
+        if (0 -lt $dirty.Length) {
+            throw 'The authoritative reference comparison requires a clean worktree apart from generated root-level T6.*.zip bundles. Commit/stash other changes or use -AllowDirty for an explicitly non-authoritative run.'
         }
     }
 
@@ -76,12 +77,13 @@ try {
         throw 'hardware_inventory.txt is required for the reference-host comparison.'
     }
 
-    $repoParent = Split-Path -Parent $repoRoot
-    $temporaryRoot = Join-Path $repoParent ('Icod.Grep-T6-' + [Guid]::NewGuid().ToString('N'))
-    $baselineRoot = Join-Path $temporaryRoot 'baseline'
+    $temporaryBase = [System.IO.Path]::GetTempPath()
+    $temporaryName = 'grep-t6-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+    $temporaryRoot = Join-Path $temporaryBase $temporaryName
+    $baselineRoot = Join-Path $temporaryRoot 'b'
     New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 
-    Write-IcodProgressLine "Preparing $BaselineLabel worktree."
+    Write-IcodProgressLine "Preparing $BaselineLabel worktree at $baselineRoot."
     git worktree add --detach $baselineRoot $BaselineCommit
     if (0 -ne $LASTEXITCODE) {
         throw "Unable to create the $BaselineLabel worktree."
@@ -99,9 +101,9 @@ try {
 
         function Initialize-IcodBenchmarkVariant {
             param(
-                [Parameter(Mandatory)]
+                [Parameter(Mandatory = $true)]
                 [string]$Root,
-                [Parameter(Mandatory)]
+                [Parameter(Mandatory = $true)]
                 [string]$Label
             )
 
@@ -109,12 +111,11 @@ try {
             Write-IcodProgressLine "Restoring/building $Label benchmark harness."
             Push-Location $Root
             try {
-                dotnet restore benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj
+                & dotnet restore benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj | Out-Host
                 if (0 -ne $LASTEXITCODE) {
                     throw "$Label benchmark restore failed."
                 }
-
-                dotnet build benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-restore
+                & dotnet build benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-restore -p:ContinuousIntegrationBuild=true | Out-Host
                 if (0 -ne $LASTEXITCODE) {
                     throw "$Label benchmark build failed."
                 }
@@ -127,17 +128,17 @@ try {
 
         function Invoke-IcodBenchmarkVariant {
             param(
-                [Parameter(Mandatory)]
+                [Parameter(Mandatory = $true)]
                 [string]$Root,
-                [Parameter(Mandatory)]
+                [Parameter(Mandatory = $true)]
                 [string]$Label,
-                [Parameter(Mandatory)]
+                [Parameter(Mandatory = $true)]
                 [string]$Commit,
-                [Parameter(Mandatory)]
+                [Parameter(Mandatory = $true)]
                 [int]$Pass,
-                [Parameter(Mandatory)]
+                [Parameter(Mandatory = $true)]
                 [int]$RunNumber,
-                [Parameter(Mandatory)]
+                [Parameter(Mandatory = $true)]
                 [int]$RunCount
             )
 
@@ -145,7 +146,6 @@ try {
             $variantOutput = Join-Path $outputRoot $passLabel
             New-Item -ItemType Directory -Path $variantOutput -Force | Out-Null
             $watch = [System.Diagnostics.Stopwatch]::StartNew()
-
             Write-IcodProgressLine "Starting benchmark run $RunNumber/${RunCount}: $passLabel ($($Commit.Substring(0, 7)))."
 
             $previousSource = $env:ICOD_BENCHMARK_SOURCE
@@ -168,13 +168,13 @@ try {
                     }
 
                     if ($Smoke) {
-                        dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --metadata $env:ICOD_BENCHMARK_METADATA_PATH
+                        & dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --metadata $env:ICOD_BENCHMARK_METADATA_PATH | Out-Host
                         if (0 -ne $LASTEXITCODE) {
                             throw "$passLabel benchmark metadata smoke failed."
                         }
-                        dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --smoke
+                        & dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --smoke | Out-Host
                     } else {
-                        dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --filter $Filter
+                        & dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --filter $Filter | Out-Host
                     }
                     if (0 -ne $LASTEXITCODE) {
                         throw "$passLabel benchmark run failed."
@@ -196,7 +196,6 @@ try {
             }
 
             Write-IcodProgressLine ("Completed benchmark run $RunNumber/${RunCount}: $passLabel in {0:n1} minutes." -f $watch.Elapsed.TotalMinutes)
-
             return [PSCustomObject]@{
                 Label = $Label
                 Pass = $Pass
@@ -211,7 +210,6 @@ try {
 
         $sequence = New-Object System.Collections.Generic.List[object]
         $runNumber = 0
-
         for ($pass = 1; $pass -le $effectivePasses; $pass++) {
             if (0 -eq ($pass % 2)) {
                 $variants = @(
@@ -228,15 +226,8 @@ try {
             foreach ($variant in $variants) {
                 $runNumber++
                 $sequence.Add(
-                    (Invoke-IcodBenchmarkVariant `
-                        -Root $variant.Root `
-                        -Label $variant.Label `
-                        -Commit $variant.Commit `
-                        -Pass $pass `
-                        -RunNumber $runNumber `
-                        -RunCount $totalRuns)
+                    (Invoke-IcodBenchmarkVariant -Root $variant.Root -Label $variant.Label -Commit $variant.Commit -Pass $pass -RunNumber $runNumber -RunCount $totalRuns)
                 )
-
                 if (0 -lt $effectiveCooldownSeconds -and $runNumber -lt $totalRuns) {
                     Write-IcodProgressLine "Cooling down for $effectiveCooldownSeconds seconds before the next benchmark run."
                     Start-Sleep -Seconds $effectiveCooldownSeconds
@@ -256,9 +247,8 @@ try {
             HardwareInventorySha256 = (Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash.ToLowerInvariant()
             CollectedUtc = [DateTimeOffset]::UtcNow.ToString('O')
         } | ConvertTo-Json -Depth 6
-        $comparisonPath = Join-Path $outputRoot 'comparison.json'
         [System.IO.File]::WriteAllText(
-            $comparisonPath,
+            (Join-Path $outputRoot 'comparison.json'),
             $comparison,
             [System.Text.UTF8Encoding]::new($false)
         )
@@ -266,8 +256,20 @@ try {
         Write-IcodProgressLine "Reference comparison complete. Results: $outputRoot"
     } finally {
         Write-IcodProgressLine "Removing temporary $BaselineLabel worktree."
-        git worktree remove --force $baselineRoot 2>$null
-        Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
+        $previousErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & git worktree remove --force $baselineRoot 2>$null
+            if (0 -ne $LASTEXITCODE) {
+                Write-Warning 'Git could not remove the temporary baseline worktree cleanly. Pruning its registration and continuing because benchmark data collection has completed.'
+                & git worktree prune 2>$null | Out-Null
+            }
+        } finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+        if (Test-Path -LiteralPath $temporaryRoot) {
+            Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 } finally {
     Pop-Location
