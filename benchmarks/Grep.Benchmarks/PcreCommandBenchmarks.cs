@@ -14,6 +14,7 @@ public class PcreCommandBenchmarks {
 	private byte[] inputBytes = Array.Empty<byte>();
 	private MemoryStream? output;
 	private string[] arguments = Array.Empty<string>();
+	private string? previousLcAll;
 
 	/// <summary>Gets the PCRE workload name.</summary>
 	[Params(
@@ -30,6 +31,10 @@ public class PcreCommandBenchmarks {
 	/// <summary>Prepares deterministic PCRE input and validates the workload.</summary>
 	[GlobalSetup]
 	public void Setup() {
+		this.previousLcAll = Environment.GetEnvironmentVariable( "LC_ALL" );
+		if ( "unicode-property" == this.Workload ) {
+			Environment.SetEnvironmentVariable( "LC_ALL", "C.UTF-8" );
+		}
 		(this.inputBytes, this.arguments) = this.CreateWorkload();
 		this.input = new MemoryStream(
 			this.inputBytes,
@@ -63,9 +68,13 @@ public class PcreCommandBenchmarks {
 		);
 	}
 
-	/// <summary>Releases benchmark streams.</summary>
+	/// <summary>Releases benchmark streams and restores the locale environment.</summary>
 	[GlobalCleanup]
 	public void Cleanup() {
+		Environment.SetEnvironmentVariable(
+			"LC_ALL",
+			this.previousLcAll
+		);
 		this.input?.Dispose();
 		this.output?.Dispose();
 		this.error?.Dispose();
