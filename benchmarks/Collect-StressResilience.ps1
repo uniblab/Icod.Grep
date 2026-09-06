@@ -24,12 +24,17 @@ function Write-IcodProgressLine {
 Push-Location $repoRoot
 try {
     if (-not $AllowDirty) {
-        [object[]]$dirty = @(git status --porcelain)
+        [object[]]$status = @(git status --porcelain --untracked-files=all)
         if (0 -ne $LASTEXITCODE) {
             throw 'Unable to inspect repository status.'
         }
+        [object[]]$dirty = @(
+            $status | Where-Object {
+                $_ -notmatch '^\?\? T6\..*\.zip$'
+            }
+        )
         if (0 -lt $dirty.Length) {
-            throw 'The authoritative T6.8 resilience collection requires a clean worktree. Commit/stash changes or use -AllowDirty for an explicitly non-authoritative run.'
+            throw 'The authoritative T6.8 resilience collection requires a clean worktree apart from generated root-level T6.*.zip bundles. Commit/stash other changes or use -AllowDirty for an explicitly non-authoritative run.'
         }
     }
 
