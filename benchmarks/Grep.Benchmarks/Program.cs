@@ -29,6 +29,7 @@ public static class Program {
 			if ( 2 < args.Length ) {
 				outputPath = args[ 2 ];
 			}
+			StressScalingWarmup.Run();
 			return StressScalingHarness.Run(
 				args[ 1 ],
 				outputPath
