@@ -6,7 +6,7 @@ using PCRE;
 
 /// <summary>Measures PCRE.NET interpreted versus JIT-compiled matching directly.</summary>
 [MemoryDiagnoser]
-public sealed class PcreJitBenchmarks {
+public class PcreJitBenchmarks {
 	private readonly List<PcreRegex8Bit> interpreted = new();
 	private readonly List<PcreRegex8Bit> jitted = new();
 	private readonly byte[] subject;
