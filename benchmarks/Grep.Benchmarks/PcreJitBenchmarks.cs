@@ -6,7 +6,7 @@ using PCRE;
 
 /// <summary>Measures PCRE.NET interpreted versus JIT-compiled matching directly.</summary>
 [MemoryDiagnoser]
-public sealed class PcreJitBenchmarks : IDisposable {
+public sealed class PcreJitBenchmarks {
 	private readonly List<PcreRegex8Bit> interpreted = new();
 	private readonly List<PcreRegex8Bit> jitted = new();
 	private readonly byte[] subject;
@@ -77,15 +77,5 @@ public sealed class PcreJitBenchmarks : IDisposable {
 			}
 		}
 		return matches;
-	}
-
-	/// <inheritdoc/>
-	public void Dispose() {
-		foreach ( var expression in this.interpreted ) {
-			expression.Dispose();
-		}
-		foreach ( var expression in this.jitted ) {
-			expression.Dispose();
-		}
 	}
 }
