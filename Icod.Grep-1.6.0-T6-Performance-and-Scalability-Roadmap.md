@@ -4,7 +4,7 @@
 **Target release:** `1.6.0`  
 **Theme:** performance, memory efficiency, and scalability without semantic regression  
 **Compatibility reference:** the complete `1.5.0` GNU grep 3.12 behavioral contract  
-**Status:** roadmap / measurement design
+**Status:** complete
 
 ## 1. Objective
 
@@ -263,7 +263,23 @@ Stress very large records/files, tens of thousands of files, very large fixed/BR
 
 Record scaling behavior and actual ceilings. Prefer graceful explicit failure where meaningful, but do not invent arbitrary GNU-incompatible limits merely to simplify implementation.
 
-## 13. Optional GNU comparison measurements
+## 13. T6.9 — Final reference comparison and release closure
+
+Close the release with one final controlled comparison against the immutable `1.5.0` baseline using the established physical-reference-host protocol and the current benchmark harness overlaid onto both variants.
+
+The closure must:
+
+- run the complete retained benchmark matrix rather than cherry-picking successful workloads;
+- use repeated ABBA ordering with a cooldown between passes;
+- review both timing and managed-allocation results workload by workload;
+- distinguish ordinary microbenchmark variance from a repeatable product regression;
+- reconcile the final benchmark evidence with T6.8 stress/resource findings;
+- audit the release workflow and package version; and
+- record an explicit go/no-go decision for `1.6.0`.
+
+T6.9 completed with all 29 measured workloads faster in the candidate's two-pass mean than the corresponding `1.5.0` mean and no measured two-pass mean timing regression. The final release-closure decision is recorded in [`Icod.Grep-1.6.0-T6.9-Final-Reference-and-Release-Closure.md`](Icod.Grep-1.6.0-T6.9-Final-Reference-and-Release-Closure.md).
+
+## 14. Optional GNU comparison measurements
 
 GNU grep 3.12 may be used as an informational reference competitor where a suitable environment exists, but GNU timings are not required for T6 and are never pass/fail gates.
 
@@ -271,7 +287,7 @@ Because no controlled Linux host is assumed for this release, GNU comparison is 
 
 A full GNU differential-conformance harness remains a separate future project.
 
-## 14. CI and workflow policy
+## 15. CI and workflow policy
 
 ### Ordinary PR CI
 
@@ -282,6 +298,33 @@ Continue to require:
 - installed-package smoke;
 - Windows text-versus-`-U` regression smoke;
 - all six RID archive smokes; and
-- lightweight benchmark build/fixture/smoke validation when T6.0 adds the benchmark project.
+- lightweight benchmark build/fixture/smoke validation.
 
-Hosted benchmark-smoke
+Hosted benchmark-smoke runs validate that benchmark code, deterministic fixtures, expected-result checks, and stress smoke remain executable on Windows, Linux, and macOS. Hosted timing remains diagnostic rather than an authoritative narrow performance gate.
+
+### Authoritative performance evidence
+
+Quantitative acceptance evidence comes from controlled runs on the physical Windows reference host using the pinned baseline, retained hardware inventory, deterministic benchmark corpus, and documented collector protocol. Final release closure requires the ordinary PR correctness/package matrix to remain green in addition to the retained physical evidence.
+
+## 16. T6 closure record
+
+The following retained reports form the release record. T6.2 did not produce a standalone closure document; its pattern-dispatch and regex-hot-path work was realized and validated through the subsequent record-pipeline and PCRE tranches rather than being represented by a fictitious report.
+
+| Tranche | Status | Retained closure / evidence |
+| --- | --- | --- |
+| T6.0 — benchmark foundation and baseline | Complete | [`T6.0 Reference Baseline Report`](Icod.Grep-1.6.0-T6.0-Reference-Baseline-Report.md) |
+| T6.1 — fixed-string multi-pattern scalability | Complete | [`T6.1 Closure and Residual Report`](Icod.Grep-1.6.0-T6.1-Closure-and-Residual-Report.md) |
+| T6.2 — pattern dispatch and regex hot paths | Complete / absorbed | [`T6.3 Closure and Residual Report`](Icod.Grep-1.6.0-T6.3-Closure-and-Residual-Report.md) and [`T6.7 PCRE Closure Report`](Icod.Grep-1.6.0-T6.7-PCRE-Closure-Report.md) |
+| T6.3 — record pipeline and large records | Complete | [`T6.3 Closure and Residual Report`](Icod.Grep-1.6.0-T6.3-Closure-and-Residual-Report.md) |
+| T6.4 — binary probing and input pipeline | Complete | [`T6.4 Binary Probe Closure Report`](Icod.Grep-1.6.0-T6.4-Binary-Probe-Closure-Report.md) |
+| T6.5 — output, formatting, color, and context | Complete | [`T6.5 Output Closure Report`](Icod.Grep-1.6.0-T6.5-Output-Closure-Report.md) |
+| T6.6 — filesystem traversal and many files | Complete | [`T6.6 Filesystem Closure Report`](Icod.Grep-1.6.0-T6.6-Filesystem-Closure-Report.md) |
+| T6.7 — PCRE profiling and JIT | Complete | [`T6.7 PCRE Closure Report`](Icod.Grep-1.6.0-T6.7-PCRE-Closure-Report.md) |
+| T6.8 — stress, resource behavior, and limits | Complete | [`T6.8 Resilience and Resource Closure`](Icod.Grep-1.6.0-T6.8-Resilience-and-Resource-Closure.md) and [`CommandFramework 2.2.1 Consumer Validation`](Icod.Grep-1.6.0-T6.8-CommandFramework-2.2.1-Consumer-Validation.md) |
+| T6.9 — final comparison and release closure | Complete | [`T6.9 Final Reference and Release Closure`](Icod.Grep-1.6.0-T6.9-Final-Reference-and-Release-Closure.md) |
+
+## 17. Release closure
+
+T6.0 through T6.9 are complete. The compatibility guardrails remained in force throughout the release, the stress/resource program closed without a release-blocking residual, and the final controlled comparison found no measured two-pass mean timing regression across the 29-workload matrix.
+
+`Icod.Grep 1.6.0` is therefore performance- and scalability-closure ready. After the pull request's ordinary Staging validation is green, it may be merged to `main`; the normal `main` Release validation should then complete successfully before tag `v1.6.0` is created and pushed.
