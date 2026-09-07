@@ -124,6 +124,17 @@ public sealed class FixedStringMultiPatternCommandTests {
 		Assert.Equal( "cat\ndog\n"u8.ToArray(), lines.Output );
 	}
 
+	/// <summary>Verifies fixed multi-pattern matching preserves NUL-delimited record output.</summary>
+	[Fact]
+	public async Task NullDelimitedFixedPatternsPreserveRecordDelimiters() {
+		var result = await RunAsync(
+			[ "-F", "-z", "-e", "beta", "-e", "omega" ],
+			"alpha\0contains beta\0omega\0tail\0"u8.ToArray()
+		);
+		Assert.Equal( CommandExitCodes.Success, result.Status );
+		Assert.Equal( "contains beta\0omega\0"u8.ToArray(), result.Output );
+	}
+
 	private static async Task<(int Status, byte[] Output, string Error)> RunAsync(
 		string[] args,
 		byte[] input,
