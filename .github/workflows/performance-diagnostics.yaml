@@ -1,0 +1,63 @@
+name: performance-diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: BenchmarkDotNet filter
+        required: false
+        default: '*CommandBenchmarks*'
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: 10.0.x
+
+jobs:
+  benchmark:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: ubuntu-latest
+            name: Linux
+          - os: macos-latest
+            name: macOS
+    name: Hosted benchmark - ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore benchmark project
+        run: dotnet restore benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj
+      - name: Build benchmark project
+        run: dotnet build benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-restore -p:ContinuousIntegrationBuild=true
+      - name: Run hosted diagnostic benchmark
+        shell: pwsh
+        env:
+          ICOD_BENCHMARK_SOURCE: HostedCI
+          ICOD_BENCHMARK_LABEL: ${{ matrix.name }}
+          ICOD_BENCHMARK_COMMIT: ${{ github.sha }}
+          ICOD_BENCHMARK_METADATA_PATH: artifacts/benchmarks/metadata.json
+          ICOD_REFERENCE_INVENTORY_PATH: hardware_inventory.txt
+        run: |
+          New-Item -ItemType Directory -Path artifacts/benchmarks -Force | Out-Null
+          dotnet run --project benchmarks/Grep.Benchmarks/Icod.Grep.Benchmarks.csproj -c Release --no-build --no-restore -- --filter '${{ inputs.filter }}'
+          if (0 -ne $LASTEXITCODE) {
+              throw 'BenchmarkDotNet diagnostic run failed.'
+          }
+          if (Test-Path -LiteralPath BenchmarkDotNet.Artifacts) {
+              Copy-Item -LiteralPath BenchmarkDotNet.Artifacts -Destination artifacts/benchmarks/BenchmarkDotNet.Artifacts -Recurse -Force
+          }
+      - name: Upload hosted benchmark diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: icod-grep-benchmark-${{ matrix.name }}
+          path: artifacts/benchmarks
+          if-no-files-found: error
+          retention-days: 14

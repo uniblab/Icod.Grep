@@ -32,12 +32,56 @@ The current GNU grep 3.12 feature-completeness assessment and compatibility boun
 Install the .NET tool from NuGet.org:
 
 ```text
-dotnet tool install --global Icod.Grep --version 1.5.0
+dotnet tool install --global Icod.Grep --version 1.6.0
 ```
 
 The package installs a single command named `grep`.
 
 Runtime-specific ZIP distributions are also published for Windows, Linux, and macOS on x64 and ARM64. The ZIP archives contain `grep` (or `grep.exe` on Windows), `README.md`, `LICENSE`, and `THIRD-PARTY-NOTICES.md`, and require the .NET 10 runtime.
+
+## EXAMPLES
+
+Search a file and print matching record numbers:
+
+```text
+grep -n "needle" file.txt
+```
+
+Search a directory tree for a fixed string:
+
+```text
+grep -r -F "TODO:" src
+```
+
+Use an extended regular expression:
+
+```text
+grep -E "^[[:space:]]*(TODO|FIXME):" notes.txt
+```
+
+Use a PCRE lookbehind and print only the matching portion:
+
+```text
+grep -P -o "(?<=user=)[A-Za-z0-9_]+" audit.log
+```
+
+Search only C# files while skipping build-output directories:
+
+```text
+grep -r -F "needle" --include="*.cs" --exclude-dir="bin" --exclude-dir="obj" .
+```
+
+Search NUL-delimited records with multiple fixed patterns. Selected records remain NUL-delimited in the output:
+
+```text
+grep -z -F -e "error" -e "fatal" records.bin
+```
+
+## PERFORMANCE IN 1.6.0
+
+`1.6.0` is the measured performance and scalability release. Its final controlled reference-host comparison used the immutable `1.5.0` baseline and found the `1.6.0` candidate faster in the two-pass mean for all 29 measured workloads, with no measured two-pass mean timing regression. The work includes fixed multi-pattern matching, reduced record/input copying, bounded binary probing, filesystem and output-path improvements, PCRE2 JIT, and explicit stress/resource validation.
+
+See the [`T6.9 Final Reference and Release Closure`](Icod.Grep-1.6.0-T6.9-Final-Reference-and-Release-Closure.md) for the measurement protocol, representative results, and release-closure decision.
 
 ## DEVELOPMENT AND RELEASE
 
